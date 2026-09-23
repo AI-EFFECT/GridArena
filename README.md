@@ -1,4 +1,4 @@
-# Low Voltage Grid Play
+# Grid Arena
 
 Digital environment to interact with Low Voltage Grids, supporting grid management, measurement and historical data handling, power flow simulation, and benchmark-based validation of algorithms for phase mapping, topology discovery, state estimation, and voltage control.
 
