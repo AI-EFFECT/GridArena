@@ -244,9 +244,9 @@ async def submit_topology_guesses(topology_guess: sc.TopologyGuessSubmission):
 
         cursor.execute(
             """
-            INSERT INTO "TopologyUserGuesses" (guess_id, grid_id, guessed_topology)
+            INSERT INTO "TopologyUserGuesses" (user_id, grid_id, guessed_topology)
             VALUES (%s, %s, %s)
-            ON CONFLICT (guess_id, grid_id)
+            ON CONFLICT (user_id, grid_id)
             DO UPDATE SET
                 guessed_topology = EXCLUDED.guessed_topology,
                 timestamp = CURRENT_TIMESTAMP
@@ -303,7 +303,7 @@ async def get_score(guess_id: str, grid_id: str = Query(...)):
             """
             SELECT guessed_topology
             FROM "TopologyUserGuesses"
-            WHERE guess_id = %s AND grid_id = %s
+            WHERE user_id = %s AND grid_id = %s
             """,
             (guess_id, real_grid_id),
         )

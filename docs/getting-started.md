@@ -56,6 +56,10 @@ git-ignored).
 | `LVGPLAY_LLM_MAX_TOOL_ROUNDS` | `4` | Maximum tool-call rounds per user turn before the assistant is forced to answer with whatever it has gathered so far. |
 | `LVGPLAY_LLM_EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Names the embedding model used for RAG (currently always chromadb's bundled ONNX MiniLM). Recorded in the RAG manifest so embedder and retriever are checked against the same value. |
 | `LVGPLAY_DATA_DIR` | `./data/llm` | Writable runtime state kept outside the installed package (e.g. document-assistant storage). Created automatically on startup. |
+| `LVGPLAY_ALLOW_DOCUMENT_AGENTS` | `0` | Enables the [document-assistant](api/chat.md#document-assistants) feature and its `/chat/agents` endpoints. |
+| `LVGPLAY_LLM_MAX_SOURCE_MB` | `5` | Per-file upload cap (MB) for attached Markdown documents. |
+| `LVGPLAY_LLM_MAX_SOURCES_PER_AGENT` | `20` | Total attached files per document assistant. |
+| `LVGPLAY_LLM_DOC_CHUNKS_PER_ANSWER` | `6` | Excerpts retrieved per question asked of a document assistant. |
 | `REDIS_URL` | `redis://localhost:6379` | Redis instance used as the message broker for [Digital Twin](api/digital-twin.md) data ingestion. |
 
 Digital twins created with `auth_type` other than `none` also reference an
