@@ -3,8 +3,8 @@ site_description: >-
   Simulation and analytics API for low-voltage electrical distribution grids —
   grid management, measurement and historical data, power flow simulation,
   synthetic data generation, digital twins, and AI benchmark suites.
-site_url: https://lvg-play.readthedocs.io/
-repo_url: https://gitlab.inesctec.pt/cpes/european-projects/aieffect/gridarena
+site_url: https://gridarena.readthedocs.io/
+repo_url: https://github.com/AI-EFFECT/GridArena
 repo_name: gridarena
 edit_uri: edit/main/docs/
 
