@@ -58,9 +58,9 @@ part of the **AI-EFFECT** project.
 ## Project status
 
 This is an active research/development platform, not yet a tagged stable release.
-See the [Changelog](changelog.md) for what's changed, and
-[Contributing](contributing.md) if you'd like to get involved.
+See [Contributing](contributing.md) if you'd like to get involved.
 
 ## License
 
-gridarena is released under the [MIT License](license.md).
+gridarena is released under the [European Union Public Licence v1.2 (EUPL-1.2)](license.md),
+with a commercial license also available.
