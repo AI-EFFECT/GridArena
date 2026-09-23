@@ -1,0 +1,37 @@
+{
+  "agent_id": "755a631130b0",
+  "name": "State Estimation",
+  "description": "State Estimation for grids",
+  "created_at": "2026-09-22T14:07:03.395643+00:00",
+  "updated_at": "2026-09-22T14:07:05.063978+00:00",
+  "sources": [
+    {
+      "source_id": "bb6c27512cd1",
+      "filename": "state_estimation_dynamic_learning.md",
+      "sha256": "bb6c27512cd10f4d51b13afba4524f28bf844d8145349fed5d388cc68717df75",
+      "bytes": 2944,
+      "chunks": 4,
+      "title": "State Estimation in Electric Grids: Dynamic and Learning-Based Algorithms",
+      "headings": [
+        "State Estimation in Electric Grids: Dynamic and Learning-Based Algorithms",
+        "Kalman Filter-Based Dynamic State Estimation (DSE)",
+        "Learning-Based and Latent-Space Approaches"
+      ],
+      "uploaded_at": "2026-09-22T14:07:04.404488+00:00"
+    },
+    {
+      "source_id": "a158ba7e5f5d",
+      "filename": "state_estimation_classical.md",
+      "sha256": "a158ba7e5f5dd9134d1eaf56ade8267fe9799ca494aad0d7ceb46ab959dab3fc",
+      "bytes": 2741,
+      "chunks": 3,
+      "title": "State Estimation in Electric Grids: Classical Algorithms",
+      "headings": [
+        "State Estimation in Electric Grids: Classical Algorithms",
+        "Weighted Least Squares (WLS)",
+        "Robust Estimators: WLAV and M-Estimators"
+      ],
+      "uploaded_at": "2026-09-22T14:07:05.056307+00:00"
+    }
+  ]
+}

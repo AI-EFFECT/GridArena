@@ -1,0 +1,36 @@
+{
+  "agent_id": "d94897320611",
+  "name": "Phase Detection in LV grids",
+  "description": "for the problem of phase detection",
+  "created_at": "2026-09-22T14:38:28.972806+00:00",
+  "updated_at": "2026-09-22T14:38:32.715888+00:00",
+  "sources": [
+    {
+      "source_id": "252bd335ff6d",
+      "filename": "phase_detection_signal_graph_ml.md",
+      "sha256": "252bd335ff6d1c26991f52cfd9941a0ea870a02dd7b705b485760ed06ca9865d",
+      "bytes": 3108,
+      "chunks": 3,
+      "title": "Phase Detection in LV Electric Grids: Signal-Based and Graph/ML Methods",
+      "headings": [
+        "Signal Injection (Pilot-Tone / PLC-Based)",
+        "Graph-Constrained and Learning-Based Methods"
+      ],
+      "uploaded_at": "2026-09-22T14:38:31.257084+00:00"
+    },
+    {
+      "source_id": "5786b1f785ad",
+      "filename": "phase_detection_correlation_clustering.md",
+      "sha256": "5786b1f785ad54048afa835846ac7403f76fc7efe48d9b1e85903d1d06957162",
+      "bytes": 2983,
+      "chunks": 4,
+      "title": "Phase Detection in LV Electric Grids: Correlation and Clustering-Based Methods",
+      "headings": [
+        "Phase Detection in LV Electric Grids: Correlation and Clustering-Based Methods",
+        "Voltage Correlation Against a Reference",
+        "Unsupervised Clustering"
+      ],
+      "uploaded_at": "2026-09-22T14:38:32.673588+00:00"
+    }
+  ]
+}
