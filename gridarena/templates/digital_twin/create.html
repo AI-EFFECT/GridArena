@@ -121,16 +121,16 @@
   <div style="display:flex; gap:16px; flex-wrap:wrap;">
     <!-- Graph -->
     <div style="flex:1; min-width:300px;">
-      <div id="gridGraph" style="background:#fff; border:1px solid #e5e7eb; border-radius:8px; min-height:350px;"></div>
+      <div id="gridGraph" style="background:var(--chart-plot-bg); border:1px solid var(--color-border); border-radius:8px; min-height:350px;"></div>
     </div>
 
     <!-- Node config panel -->
     <div style="flex:1; min-width:300px;">
-      <div id="nodePanel" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:16px; min-height:350px;">
+      <div id="nodePanel" style="background:var(--color-surface-sunken); border:1px solid var(--color-border); border-radius:8px; padding:16px; min-height:350px;">
         <p class="muted" id="nodePanelPlaceholder" style="text-align:center; padding-top:120px;">Click a node on the graph to configure its data feed.</p>
 
         <div id="nodeForm" style="display:none;">
-          <h4 style="margin:0 0 8px; font-size:14px; color:#0f172a;">Node: <strong id="nfNodeId"></strong></h4>
+          <h4 style="margin:0 0 8px; font-size:14px; color:var(--color-text);">Node: <strong id="nfNodeId"></strong></h4>
 
           <div class="field">
             <label style="min-width:130px;">Phase</label>
@@ -141,7 +141,7 @@
             </select>
           </div>
           <div>
-            <label style="font-size:12px; font-weight:600; color:#374151; display:block; margin-bottom:6px;">Query Parameters</label>
+            <label style="font-size:12px; font-weight:600; color:var(--color-text); display:block; margin-bottom:6px;">Query Parameters</label>
             <div id="nfParamsList"></div>
             <button type="button" class="btn" style="height:26px; padding:0 10px; font-size:11px; margin-top:4px;" onclick="addParamRow()">+ Add Parameter</button>
           </div>
@@ -154,7 +154,7 @@
             <input id="nfTimeout" class="input" type="number" value="30" min="1" max="300" style="width:100px;">
           </div>
 
-          <h4 style="font-size:13px; margin:14px 0 6px; color:#374151;">Field Mapping</h4>
+          <h4 style="font-size:13px; margin:14px 0 6px; color:var(--color-text);">Field Mapping</h4>
           <p class="dt-step__desc" style="margin-bottom:8px;">Use dot paths with <code>[0]</code> to extract the latest entry from arrays. Example: <code>data[0].value</code></p>
 
           <div class="field">
@@ -164,19 +164,19 @@
           <div class="field">
             <label style="min-width:130px;">Active Power</label>
             <input id="nfActivePower" class="input" type="text" placeholder="data[0].value" style="width:140px;">
-            <span style="font-size:11px; color:#6b7280; margin:0 4px;">&times;</span>
+            <span style="font-size:11px; color:var(--color-text-muted); margin:0 4px;">&times;</span>
             <input id="nfActivePowerFactor" class="input" type="number" value="1" step="any" style="width:70px;" title="Multiplicative factor applied to the raw value">
           </div>
           <div class="field">
             <label style="min-width:130px;">Reactive Power</label>
             <input id="nfReactivePower" class="input" type="text" placeholder="(optional)" style="width:140px;">
-            <span style="font-size:11px; color:#6b7280; margin:0 4px;">&times;</span>
+            <span style="font-size:11px; color:var(--color-text-muted); margin:0 4px;">&times;</span>
             <input id="nfReactivePowerFactor" class="input" type="number" value="1" step="any" style="width:70px;" title="Multiplicative factor applied to the raw value">
           </div>
           <div class="field">
             <label style="min-width:130px;">Voltage Mag.</label>
             <input id="nfVoltageMag" class="input" type="text" placeholder="(optional)" style="width:140px;">
-            <span style="font-size:11px; color:#6b7280; margin:0 4px;">&times;</span>
+            <span style="font-size:11px; color:var(--color-text-muted); margin:0 4px;">&times;</span>
             <input id="nfVoltageMagFactor" class="input" type="number" value="1" step="any" style="width:70px;" title="Multiplicative factor applied to the raw value">
           </div>
 
@@ -191,7 +191,7 @@
 
   <!-- Assigned nodes table -->
   <div style="margin-top:16px;">
-    <h4 style="font-size:14px; margin:0 0 8px; color:#0f172a;">Assigned Nodes (<span id="assignCount">0</span>)</h4>
+    <h4 style="font-size:14px; margin:0 0 8px; color:var(--color-text);">Assigned Nodes (<span id="assignCount">0</span>)</h4>
     <table class="data-table" id="assignTable">
       <thead>
         <tr>
@@ -205,7 +205,7 @@
         </tr>
       </thead>
       <tbody id="assignBody">
-        <tr id="assignEmpty"><td colspan="7" style="text-align:center; padding:16px; color:#6b7280;">No nodes assigned yet.</td></tr>
+        <tr id="assignEmpty"><td colspan="7" style="text-align:center; padding:16px; color:var(--color-text-muted);">No nodes assigned yet.</td></tr>
       </tbody>
     </table>
   </div>
@@ -260,7 +260,7 @@
     <dl class="dt-review-grid" id="reviewGrid"></dl>
   </div>
 
-  <h4 style="font-size:13px; margin:16px 0 6px; color:#374151;">Node Assignments (<span id="reviewAssignCount">0</span>)</h4>
+  <h4 style="font-size:13px; margin:16px 0 6px; color:var(--color-text);">Node Assignments (<span id="reviewAssignCount">0</span>)</h4>
   <div class="dt-mapping-preview" id="reviewAssignments"></div>
 
   <div class="dt-wizard-nav" style="margin-top:20px;">

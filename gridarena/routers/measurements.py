@@ -298,7 +298,7 @@ def measurements_ui_root(request: Request) -> HTMLResponse:
     total_records = sum(g["n_records"] for g in items)
     grids_with_data = sum(1 for g in items if g["n_records"] > 0)
 
-    return templates.TemplateResponse("measurements/list.html", {
+    return templates.TemplateResponse(request, "measurements/list.html", {
         "request": request,
         "title": "Measurements",
         "active": "measurements",
@@ -352,7 +352,7 @@ def measurements_ui_grid(
         conn.close()
 
     if df.empty:
-        return templates.TemplateResponse("measurements/detail.html", {
+        return templates.TemplateResponse(request, "measurements/detail.html", {
             "request": request,
             "title": f"Measurements: {grid_id}",
             "active": "measurements",
@@ -371,7 +371,7 @@ def measurements_ui_grid(
     checked_s = not selected_phases or "S" in selected_phases
     checked_t = not selected_phases or "T" in selected_phases
 
-    return templates.TemplateResponse("measurements/detail.html", {
+    return templates.TemplateResponse(request, "measurements/detail.html", {
         "request": request,
         "title": f"Measurements: {grid_id}",
         "active": "measurements",

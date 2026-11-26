@@ -4,7 +4,7 @@
 
 The Phase Agent provides the Phase Identification Benchmark. The goal is to determine which phase (R, S, or T) each node in the grid belongs to, using only smart meter time-series data.
 
-This is a classification problem: each node must be assigned to exactly one of three phases. The benchmark provides labelled training data (with known phases) and unlabelled test data (phases hidden). You submit predictions and receive an accuracy score.
+This is a classification problem: each measurement series must be assigned to exactly one of three phases. The benchmark provides labelled training data (with known phases). The test data is never downloaded: instead you submit a Python script defining `predict(measurements)`, the server runs it on the hidden test grids and scores the phases it returns.
 
 **Typical use case:** An engineer or algorithm wants to identify the phase assignment of nodes in a grid where the wiring is poorly documented.
 
@@ -17,7 +17,7 @@ This is a classification problem: each node must be assigned to exactly one of t
 Use this when you want to train or test a phase identification algorithm, get labelled examples of what phase each node belongs to, or understand what the input data looks like before attempting predictions.
 
 **Parameters:**
-- `difficulty` (string, optional, default=`"clean"`): Controls the noise level in the measurements. Use `"clean"` for noise-free data, `"noisy"` for realistic sensor noise.
+- `difficulty` (string, optional, default=`"clean"`): Controls the noise level in the measurements. One of `"clean"` (noise-free), `"easy"`, `"medium"`, `"hard"` (increasing sensor noise and outliers).
 
 **Returns:** Time-series measurements per node with known phase labels (R, S, or T) included.
 
@@ -35,80 +35,70 @@ Use this when you want to train or test a phase identification algorithm, get la
 
 ---
 
-### get_phase_identification_data
+### get_phase_submission_template
 
-Use this when you want to get the actual test data to run predictions on. Phase labels are hidden — you must predict them.
+Use this when you want to write a phase identification model to submit, or need to know the exact input and output format the submitted script must follow.
 
-**Parameters:**
-- `difficulty` (string, optional, default=`"clean"`): Same difficulty options as training data. Use the same difficulty level for a fair comparison.
+**Parameters:** none.
 
-**Returns:** Time-series measurements per node without phase labels.
+**Returns:** `filename` and `source` of the blank submission script.
 
 **How to interpret:**
-- Same structure as training data but without the phase label field
-- Feed these measurements into your model and produce a guess for each node_id
-- Submit predictions using `submit_phase_guesses`
+- The script defines `predict(measurements)`, called once per test grid
+- `measurements` maps a random series key to its list of records (`datetime`, `power_active`, `power_reactive`, `voltage_magnitude`, `voltage_angle`), the same fields as the training data without `phase`
+- It must return `{series_key: "R" | "S" | "T"}` for every key
+- The template's default `predict` guesses at random; replace its body with the actual method
+- The script runs without network access, with numpy, pandas, scipy and torch available
+
+---
+
+### submit_phase_script
+
+Use this when you want to evaluate a phase identification method on the hidden test grids.
+
+**Parameters:**
+- `submission_name` (string, required): A label for this attempt (e.g. `"run_001"`); letters, digits, `_`, `-`, `.`
+- `code` (string, required): The full Python source, based on the submission template
+- `difficulty` (string, optional, default=`"clean"`): Noise level of the test data the script is run on
+
+**Returns:** The submission record with its `submission_id` and `status` (`queued`).
+
+**Notes:**
+- The script is checked for syntax errors and for a top-level `predict` function before it is queued
+- Evaluation runs in the background; use `get_phase_submission` with the returned `submission_id` to follow it
 
 **Example:**
 ```json
 {
+  "submission_name": "run_001",
+  "code": "def predict(measurements):
+    return {key: 'R' for key in measurements}
+",
   "difficulty": "clean"
 }
 ```
 
 ---
 
-### submit_phase_guesses
+### get_phase_submission
 
-Use this when you want to submit your predicted phase assignments and get them evaluated.
-
-**Parameters:**
-- `guess_id` (string, required): A unique identifier for this submission run (e.g. `"run_001"`)
-- `grid_id` (string, required): The grid the predictions are for
-- `guesses` (object, required): A mapping of node_id → predicted phase. Each value must be `"R"`, `"S"`, or `"T"`.
-
-**Returns:** Confirmation of submission.
-
-**Notes:**
-- Every node in the test set must have a prediction — partial submissions are not valid
-- Use the same `guess_id` when retrieving the score
-
-**Example:**
-```json
-{
-  "guess_id": "run_001",
-  "grid_id": "grid001",
-  "guesses": {
-    "node_1": "R",
-    "node_2": "S",
-    "node_3": "T",
-    "node_4": "R"
-  }
-}
-```
-
----
-
-### get_phase_score
-
-Use this when you want to see how accurate your phase predictions were.
+Use this when you want to know whether a submitted script has finished and how accurate it was.
 
 **Parameters:**
-- `guess_id` (string, required): The ID used when submitting predictions
-- `grid_id` (string, required): The grid the submission was for
+- `submission_id` (string, required): The ID returned by `submit_phase_script`
 
-**Returns:** Accuracy score for the submission.
+**Returns:** The submission's `status` (`queued`, `running`, `completed`, `failed`), its `score` when completed, its `error` when failed, and `log_tail` (what the script printed, plus tracebacks).
 
 **How to interpret:**
-- Accuracy = number of correctly predicted nodes / total nodes
-- Score of 1.0 means every node was assigned the correct phase
-- Random guessing gives approximately 0.33 (one-in-three chance per node)
-- A score below 0.33 suggests the predictions are worse than random — check your data preprocessing
+- `score.accuracy` = correctly predicted series / all test series; missing keys and values other than R/S/T count as wrong
+- `score.per_grid` lists each test grid's accuracy and any error its `predict` call raised
+- `score.confusion` counts true phase vs. predicted phase (`other` = missing or invalid)
+- Random guessing gives approximately 0.33
+- When `status` is `failed`, read `error` and `log_tail` to fix the script and submit again
 
 **Example:**
 ```json
 {
-  "guess_id": "run_001",
-  "grid_id": "grid001"
+  "submission_id": "3f9c1a2b7d4e"
 }
 ```

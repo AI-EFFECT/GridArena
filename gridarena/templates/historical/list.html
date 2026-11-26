@@ -34,6 +34,15 @@
     grid level (<strong>MV</strong>, <strong>LV</strong>, or <strong>Feeder</strong>) it's meant for. You only ever
     upload whole databases; a database can contain as many series as you like.
   </p>
+  <p class="muted" style="margin-top:8px;">
+    Every database also has a <strong>type</strong>: <span class="badge badge--load">Load</span> for consumption data
+    (the default, and the only type PF Data Generation uses as its load source), or a kind of generation injected
+    into the grid: <span class="badge badge--pv">&#9728; Solar PV</span>
+    <span class="badge badge--wind">Wind</span> <span class="badge badge--hydro">Hydro</span>
+    <span class="badge badge--chp">Cogeneration</span> <span class="badge badge--other_generation">Other generation</span>
+    <span class="badge badge--injection_total">Total injection</span>. For generation, <code>power_active</code> is the
+    power generated (positive = produced). Every type has exactly the same structure.
+  </p>
 </div>
 
 <!-- Summary cards -->
@@ -41,6 +50,10 @@
   <div class="grid-summary-card">
     <div class="grid-summary-card__value">{{ items | length }}</div>
     <div class="grid-summary-card__label">Total Databases</div>
+  </div>
+  <div class="grid-summary-card">
+    <div class="grid-summary-card__value">{{ n_generation }}</div>
+    <div class="grid-summary-card__label">Generation Databases</div>
   </div>
   <div class="grid-summary-card">
     <div class="grid-summary-card__value">{{ total_series }}</div>
@@ -61,10 +74,25 @@
     <code>series_id</code>, <code>grid_level</code> ("MV", "LV", or "Feeder"), and a <code>values</code> list whose
     <code>datetime</code>s must all be members of <code>timestamps</code>. Each value needs power fields
     (<code>power_active</code>/<code>power_reactive</code>), voltage fields
-    (<code>voltage_magnitude</code>/<code>voltage_angle</code>), or both.
+    (<code>voltage_magnitude</code>/<code>voltage_angle</code>), or both. Choose the database type below, or set
+    <code>data_type</code> in the file (<code>"load"</code>, <code>"pv"</code>, <code>"chp"</code>, <code>"wind"</code>,
+    <code>"hydro"</code>, <code>"other_generation"</code> or <code>"injection_total"</code>).
   </p>
 
   <form id="uploadForm" action="/historical/" method="post" enctype="multipart/form-data">
+    <div class="field" style="margin-bottom:12px;">
+      <label for="dataType" style="min-width:120px;">Database type</label>
+      <select class="input" id="dataType" name="data_type" style="width:260px;">
+        <option value="">From the file (Load if not set)</option>
+        <option value="load">Load (consumption)</option>
+        <option value="pv">&#9728; Solar PV production</option>
+        <option value="wind">Wind production</option>
+        <option value="hydro">Hydro production</option>
+        <option value="chp">Cogeneration production</option>
+        <option value="other_generation">Other generation</option>
+        <option value="injection_total">Total injection (all generation)</option>
+      </select>
+    </div>
     <input id="fileInput" type="file" name="file" accept=".json,application/json" hidden>
     <div id="drop" class="drop" role="button" tabindex="0">
       <div class="icon">&#11014;</div>
@@ -107,12 +135,17 @@
 
   <div class="grids-search">
     <input type="text" id="gridSearch" placeholder="Search databases..." oninput="filterGridTable()">
+    <select class="input" id="typeFilter" onchange="filterGridTable()" style="width:auto; margin-left:8px;" aria-label="Filter by type">
+      <option value="">All types</option>
+      {% for key, label in data_type_labels.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+    </select>
   </div>
 
   <table class="data-table" id="gridsTable">
     <thead>
       <tr>
         <th class="sortable" onclick="sortGridTable('grid-id', 'text', this)">Database ID <span class="sort-arrow"></span></th>
+        <th class="sortable" onclick="sortGridTable('type', 'text', this)">Type <span class="sort-arrow"></span></th>
         <th class="sortable" onclick="sortGridTable('series', 'num', this)">Series <span class="sort-arrow"></span></th>
         <th>MV / LV / Feeder</th>
         <th class="sortable" onclick="sortGridTable('records', 'num', this)">Records <span class="sort-arrow"></span></th>
@@ -123,8 +156,9 @@
     </thead>
     <tbody>
       {% for d in items %}
-      <tr data-grid-id="{{ d.database_id | lower }}" data-series="{{ d.n_series }}" data-records="{{ d.n_records }}" data-first="{{ d.first_ts or '' }}" data-last="{{ d.last_ts or '' }}">
+      <tr data-grid-id="{{ d.database_id | lower }}" data-type="{{ d.data_type }}" data-series="{{ d.n_series }}" data-records="{{ d.n_records }}" data-first="{{ d.first_ts or '' }}" data-last="{{ d.last_ts or '' }}">
         <td><a href="/historical/ui/{{ d.database_id }}"><strong>{{ d.database_id }}</strong></a>{% if d.name %}<div class="muted" style="font-size:11px;">{{ d.name }}</div>{% endif %}</td>
+        <td><span class="badge badge--{{ d.data_type }}">{% if d.data_type == 'pv' %}&#9728; {% endif %}{{ data_type_labels.get(d.data_type, d.data_type) }}</span></td>
         <td>{{ d.n_series }}</td>
         <td><span class="badge badge--mv">{{ d.n_mv }} MV</span> <span class="badge badge--lv">{{ d.n_lv }} LV</span> <span class="badge badge--feeder">{{ d.n_feeder }} Feeder</span></td>
         <td>{{ "{:,}".format(d.n_records) }}</td>
@@ -137,7 +171,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="7" style="text-align:center; padding:24px; color:#6b7280;">No databases found. Upload one above to get started.</td></tr>
+      <tr><td colspan="8" style="text-align:center; padding:24px; color:var(--color-text-muted);">No databases found. Upload one above to get started.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -149,9 +183,12 @@
 <script>
 function filterGridTable() {
   var q = document.getElementById('gridSearch').value.toLowerCase();
+  var type = document.getElementById('typeFilter').value;
   document.querySelectorAll('#gridsTable tbody tr').forEach(function (row) {
+    if (!row.hasAttribute('data-grid-id')) { return; }
     var id = row.getAttribute('data-grid-id') || '';
-    row.style.display = id.indexOf(q) !== -1 ? '' : 'none';
+    var matchesType = !type || row.getAttribute('data-type') === type;
+    row.style.display = id.indexOf(q) !== -1 && matchesType ? '' : 'none';
   });
 }
 

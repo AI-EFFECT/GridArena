@@ -22,23 +22,31 @@ class ObservationNoiseWrapper(gym.ObservationWrapper):
         self.noise_level = noise_level
 
     def observation(self, obs):
-        noise = np.random.normal(0, self.noise_level, size=obs["voltages_pu"].shape)
+        # Seeded RNG of the wrapped env, and a copy so the env's own obs is untouched.
+        noise = self.np_random.normal(0, self.noise_level, size=obs["voltages_pu"].shape)
         low = self.env.observation_space["voltages_pu"].low
         high = self.env.observation_space["voltages_pu"].high
-        obs["voltages_pu"] = np.clip(obs["voltages_pu"] + noise, low, high)
+        obs = dict(obs)
+        obs["voltages_pu"] = np.clip(obs["voltages_pu"] + noise, low, high).astype(np.float32)
         return obs
 
 
 class PowerBalanceWrapper(gym.Wrapper):
+    """Penalises the change in total grid power. The change is expressed in action
+    units (kW / half the power range, the scale actions are applied at) so the
+    penalty is comparable with the other action penalties."""
+
     def __init__(self, env, penalty_weight=2.0):
         super().__init__(env)
         self.penalty_weight = penalty_weight
 
     def step(self, action):
-        p_init_sum = np.sum(self.env.unwrapped.p_kw_state)
+        raw = self.env.unwrapped
+        p_init_sum = np.sum(raw.p_kw_state)
         obs, reward, terminated, truncated, info = self.env.step(action)
-        p_final_sum = np.sum(self.env.unwrapped.p_kw_state)
-        penalty = self.penalty_weight * abs(p_final_sum - p_init_sum)
+        p_final_sum = np.sum(raw.p_kw_state)
+        action_scale = (raw.p_max_kw - raw.p_min_kw) / 2.0
+        penalty = self.penalty_weight * abs(p_final_sum - p_init_sum) / action_scale
         return obs, reward - penalty, terminated, truncated, info
 
 
@@ -56,9 +64,11 @@ class L1ActionPenaltyWrapper(gym.Wrapper):
 
 
 class StablePenalty(gym.Wrapper):
-    def __init__(self, env, penalty_weight=0.5, unnecessary_act_weight=1.0):
+    """Penalises acting when the grid was already within limits. It adds no general
+    action penalty -- combine it with ActionPenalty for that."""
+
+    def __init__(self, env, unnecessary_act_weight=1.0):
         super().__init__(env)
-        self.penalty_weight = penalty_weight
         self.unnecessary_act_weight = unnecessary_act_weight
 
     def step(self, action):
@@ -68,8 +78,6 @@ class StablePenalty(gym.Wrapper):
         obs, reward, terminated, truncated, info = self.env.step(action)
 
         applied_action = info.get("applied_action", action)
-        penalty = self.penalty_weight * np.sum(np.square(applied_action))
-
         unnecessary = 0.0
         if is_stable:
             mag = np.sum(np.square(applied_action))
@@ -77,7 +85,7 @@ class StablePenalty(gym.Wrapper):
                 unnecessary = self.unnecessary_act_weight * mag
 
         info["unnecessary_penalty"] = unnecessary
-        return obs, reward - penalty - unnecessary, terminated, truncated, info
+        return obs, reward - unnecessary, terminated, truncated, info
 
 
 WRAPPER_MAP = {
@@ -93,7 +101,7 @@ WRAPPER_PARAM_MAP = {
     "L1ActionPenalty": lambda cfg: {"penalty_weight": cfg.l1_penalty_weight},
     "ObservationNoise": lambda cfg: {"noise_level": cfg.noise_level},
     "PowerBalance": lambda cfg: {"penalty_weight": cfg.power_balance_weight},
-    "StablePenalty": lambda cfg: {"penalty_weight": cfg.action_penalty_weight, "unnecessary_act_weight": cfg.unnecessary_act_weight},
+    "StablePenalty": lambda cfg: {"unnecessary_act_weight": cfg.unnecessary_act_weight},
 }
 
 

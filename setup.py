@@ -11,7 +11,7 @@ setup(
     ),
     author="David Lima, Gonçalo Cunha, Gil Sampaio",
     author_email="david.lima@inesctec.pt",
-    url="https://gitlab.inesctec.pt/cpes/european-projects/aieffect/gridarena",
+    url="https://github.com/AI-EFFECT/GridArena",
     license="EUPL-1.2",
     python_requires=">=3.11",
     classifiers=[
@@ -19,5 +19,5 @@ setup(
         "Programming Language :: Python :: 3.11",
     ],
     packages=find_packages(),
-    package_data={"gridarena": ["llm/docs/*.md"]},
+    package_data={"gridarena": ["llm/docs/*.md", "pf_datagen/package_files/*"]},
 )

@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 
+{% block page_class %}inner-page--fill{% endblock %}
+
 {% block content %}
 {% if not agent %}
 <div class="chat-fullpage">
@@ -28,7 +30,7 @@
     </form>
   </div>
   <div class="doc-agent-page__sources">
-    <h4 style="margin:0 0 8px; font-size:12px;">Sources</h4>
+    <div class="mono-label" style="margin-bottom:10px;">Sources</div>
     <div id="doc-agent-page-sources-list"></div>
   </div>
 </div>

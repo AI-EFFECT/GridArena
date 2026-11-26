@@ -182,7 +182,7 @@ Sets per-node active power caps for the scenario. Nodes not included in
 { "power_limits": { "N1": 5.0, "N2": 3.5 } }
 ```
 
-Values are max power in kW; each must be a non-negative number and each
+Values are max power in W; each must be a non-negative number and each
 key must reference a node in the scenario's grid snapshot.
 
 **Response** `200`

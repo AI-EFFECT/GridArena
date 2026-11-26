@@ -76,7 +76,7 @@ async def digital_twin_list_page(request: Request):
 
     running = sum(1 for t in twins if t["status"] == "running")
     stopped = sum(1 for t in twins if t["status"] in ("created", "stopped"))
-    return templates.TemplateResponse("digital_twin/list.html", {
+    return templates.TemplateResponse(request, "digital_twin/list.html", {
         "request": request,
         "title": "Digital Twins",
         "active": "digital_twin",
@@ -99,7 +99,7 @@ async def digital_twin_create_page(request: Request):
     finally:
         conn.close()
 
-    return templates.TemplateResponse("digital_twin/create.html", {
+    return templates.TemplateResponse(request, "digital_twin/create.html", {
         "request": request,
         "title": "New Digital Twin",
         "active": "digital_twin_create",
@@ -167,7 +167,7 @@ async def digital_twin_detail_page(request: Request, digital_twin_id: str):
         graph_edges = [{"from": u, "to": v} for u, v in G.edges()]
         graph_data = {"nodes": graph_nodes, "edges": graph_edges}
 
-    return templates.TemplateResponse("digital_twin/detail.html", {
+    return templates.TemplateResponse(request, "digital_twin/detail.html", {
         "request": request,
         "title": f"Digital Twin: {dt['name'] or digital_twin_id}",
         "active": "digital_twin",

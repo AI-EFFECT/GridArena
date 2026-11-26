@@ -31,7 +31,7 @@
     <div class="grid-summary-card__label">With Historical Data</div>
   </div>
   <div class="grid-summary-card">
-    <div class="grid-summary-card__value" style="color:#10b981;">Ready</div>
+    <div class="grid-summary-card__value" style="color:var(--color-success);">Ready</div>
     <div class="grid-summary-card__label">Solver Status</div>
   </div>
 </div>
@@ -39,7 +39,7 @@
 <!-- Run Power Flow card -->
 <div class="upload-card">
   <h3>Run Power Flow</h3>
-  <p class="upload-card__desc">Select a grid, phase and optional time range, then run the backward/forward sweep power flow solver.</p>
+  <p class="upload-card__desc">Select a grid, the power flow model and an optional time range. All three phases are solved for every measurement timestamp, from the measured power of each node and the measured voltage at the substation (PT); the computed voltages are stored apart from the measured ones, which they are compared with on the results page.</p>
 
   <form id="pfForm">
     <div class="field">
@@ -52,13 +52,15 @@
       </select>
     </div>
     <div class="field">
-      <label style="min-width:120px;" title="Electrical phase to compute the power flow for. Each phase is solved independently.">Phase</label>
-      <select class="input" id="phase" name="phase" required style="width:220px;">
-        <option value="">Select phase</option>
-        <option value="R">R</option>
-        <option value="S">S</option>
-        <option value="T">T</option>
+      <label style="min-width:120px;" title="Unbalanced: each phase keeps its own measured loads, cable impedance and substation voltage, and the return current in the neutral conductor is modelled. Balanced: every node's total power is spread evenly over the three phases, with a symmetric substation voltage.">Model</label>
+      <select class="input" id="mode" name="mode" style="width:220px;">
+        <option value="unbalanced" selected>Unbalanced (4-wire)</option>
+        <option value="balanced">Balanced</option>
       </select>
+    </div>
+    <div class="field" id="neutralField">
+      <label style="min-width:120px;" title="Impedance of the neutral conductor relative to the phase conductors of each cable. 1 = same as the phases (e.g. a 4x95 cable); 0 = ideal neutral, which makes the three phases independent.">Neutral Z ratio</label>
+      <input class="input" type="number" id="neutralRatio" name="neutral_impedance_ratio" value="1" min="0" step="any" style="width:220px;">
     </div>
     <div class="field">
       <label style="min-width:120px;" title="Only include measurement timestamps from this datetime onward. Leave empty for all available timestamps.">Start</label>
@@ -77,8 +79,8 @@
   </form>
 
   <!-- Result feedback -->
-  <div id="resultCard" class="panel" style="display:none; margin-top:16px; border-color:#10b981;">
-    <h4 style="color:#10b981; margin-top:0;">Simulation Complete</h4>
+  <div id="resultCard" class="panel" style="display:none; margin-top:16px; border-color:var(--color-success);">
+    <h4 style="color:var(--color-success); margin-top:0;">Simulation Complete</h4>
     <p class="muted" id="resultMsg"></p>
     <a id="resultLink" href="#" class="btn btn-primary" style="display:none;">View Results</a>
   </div>
@@ -133,7 +135,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="5" style="text-align:center; padding:24px; color:#6b7280;">No grids available. Upload a grid first.</td></tr>
+      <tr><td colspan="5" style="text-align:center; padding:24px; color:var(--color-text-muted);">No grids available. Upload a grid first.</td></tr>
       {% endfor %}
     </tbody>
   </table>

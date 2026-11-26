@@ -6,7 +6,7 @@
 > **Please do not publish security vulnerabilities in public issues.**
 
 Any vulnerability found should be reported directly to the maintainer listed
-in [README.md](https://gitlab.inesctec.pt/cpes/european-projects/aieffect/gridarena/-/blob/main/README.md#11-contacts) (David Lima, david.lima@inesctec.pt).
+in [README.md](https://github.com/AI-EFFECT/GridArena/blob/main/README.md#11-contacts) (David Lima, david.lima@inesctec.pt).
 If you are still waiting for a response within 48 hours, please send a
 follow-up email to confirm the initial message was received.
 
@@ -39,7 +39,7 @@ contributing code:
 - **Assessment**: We will assess the severity and potential impact of the
   vulnerability.
 - **Fix and mitigation**: We will implement a fix or mitigation strategy and
-  document it in [CHANGELOG.md](https://gitlab.inesctec.pt/cpes/european-projects/aieffect/gridarena/-/blob/main/CHANGELOG.md).
+  document it in [CHANGELOG.md](https://github.com/AI-EFFECT/GridArena/blob/main/CHANGELOG.md).
 - **Disclosure**: After the fix is deployed, we will provide a public
   disclosure with details of the vulnerability, its severity, and the fix.
 
@@ -47,7 +47,7 @@ contributing code:
 
 > [!IMPORTANT]
 > **Once a security issue is resolved or mitigated, the fix must be recorded
-> in [CHANGELOG.md](https://gitlab.inesctec.pt/cpes/european-projects/aieffect/gridarena/-/blob/main/CHANGELOG.md).**
+> in [CHANGELOG.md](https://github.com/AI-EFFECT/GridArena/blob/main/CHANGELOG.md).**
 
 Each entry should include:
 

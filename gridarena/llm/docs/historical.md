@@ -8,6 +8,8 @@ A database has a `database_id`, a declared list of `timestamps` (its shared time
 
 Users only ever upload whole databases, never a single bare series. A database can contain as many series as needed.
 
+Every database has a `data_type`: `"load"` (consumption data, the default) or a kind of generation injected into the grid — `"pv"` (solar PV), `"chp"` (cogeneration), `"wind"`, `"hydro"`, `"other_generation"` (other technologies) or `"injection_total"` (all generation together). Every type has exactly the same structure. In a generation database, `power_active` is the power generated (positive = produced), and each series' `grid_level` says where the generation is connected. Only `"load"` databases can be the load source of PF data generation.
+
 This is a lighter-weight data library than the Measurements Agent: useful for storing and browsing curves before deciding how (or whether) they map onto a specific registered grid. **It is not currently consumed by any power flow simulation or benchmark** — if you need data that feeds directly into those, use the Measurements Agent instead, which requires a registered grid and node for every reading.
 
 ---
@@ -22,10 +24,12 @@ common timeline, not tied to any particular grid or node), the user must upload 
 themselves through the historical data page in the web UI, or by calling `POST
 /historical/` directly with a JSON file that includes `database_id`, a `timestamps` list,
 and a `historicals` list (each entry needs `series_id`, `grid_level` — `"MV"`, `"LV"`, or
-`"Feeder"` — and a `values` list). Every value's `datetime` must be a member of the
-database's `timestamps` list, or the upload is rejected (422). Re-uploading the same
-`database_id` refreshes its metadata, adds any new timestamps, and upserts each series'
-data.
+`"Feeder"` — and a `values` list), plus an optional `data_type` (`"load"`, or a generation type
+such as `"pv"`; the page also has a "Database type" selector). Every value's
+`datetime` must be a member of the database's `timestamps` list, or the upload is
+rejected (422). Re-uploading the same `database_id` refreshes its metadata, adds any new
+timestamps, and upserts each series' data; it must keep the database's `data_type` (409
+otherwise).
 
 ---
 
@@ -40,10 +44,10 @@ Use this when you want to inspect what's in one series of a database, or filter 
 - `end` (string, optional): End of time range (ISO 8601 format)
 - `phase` (string, optional): Filter to a single phase — `"R"`, `"S"`, or `"T"` (series values are often unphased, i.e. `phase` is `null`)
 
-**Returns:** Series metadata (`grid_level`, `name`, `description`) plus matching records.
+**Returns:** Series metadata (`grid_level`, `name`, `description`), the database's `data_type` (`"load"` or a generation type such as `"pv"`), plus matching records.
 
 **How to interpret:**
-- `power_active`/`power_reactive`: real/reactive power, same units and sign convention as the Measurements Agent
+- `power_active`/`power_reactive`: real/reactive power, same units and sign convention as the Measurements Agent; in a generation database (any `data_type` but `"load"`) `power_active` is the power produced (positive = generated)
 - `voltage_magnitude`/`voltage_angle`: RMS voltage and phase angle, same convention as the Measurements Agent
 - Any of these four fields may be `null` on a given record — a series can be power-only or voltage-only
 - `grid_level`: whether this series is meant to represent an MV-level, LV-level, or feeder-level quantity

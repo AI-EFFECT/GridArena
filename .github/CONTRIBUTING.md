@@ -1,10 +1,10 @@
 # Contributing Guidelines
 
-Welcome, and thank you for your interest in contributing to Low Voltage Grid Play (gridarena)! Your contributions are valuable for improving the project.
+Welcome, and thank you for your interest in contributing to GridArena! Your contributions are valuable for improving the project.
 
-These guidelines outline the contribution process. Whether you're fixing a bug, adding a feature, or suggesting improvements, please review the steps below. If you have questions, contact the maintainer listed in [README.md](https://gitlab.inesctec.pt/cpes/european-projects/aieffect/gridarena/-/blob/main/README.md#11-contacts).
+These guidelines outline the contribution process. Whether you're fixing a bug, adding a feature, or suggesting improvements, please review the steps below. If you have questions, contact the maintainer listed in [README.md](https://github.com/AI-EFFECT/GridArena/blob/main/README.md#11-contacts).
 
-By participating in this project, you agree to abide by our [Code of Conduct](https://gitlab.inesctec.pt/cpes/european-projects/aieffect/gridarena/-/blob/main/.github/CODE_OF_CONDUCT.md).
+By participating in this project, you agree to abide by our [Code of Conduct](https://github.com/AI-EFFECT/GridArena/blob/main/.github/CODE_OF_CONDUCT.md).
 
 ## Step-by-step
 
@@ -36,7 +36,7 @@ By participating in this project, you agree to abide by our [Code of Conduct](ht
    ```
 
    You'll also need a running PostgreSQL server and a configured database
-   connection -- see [README.md](https://gitlab.inesctec.pt/cpes/european-projects/aieffect/gridarena/-/blob/main/README.md#4-installation) for details.
+   connection -- see [README.md](https://github.com/AI-EFFECT/GridArena/blob/main/README.md#4-installation) for details.
 
 4. **Create a branch**
 
@@ -92,4 +92,4 @@ By participating in this project, you agree to abide by our [Code of Conduct](ht
 - For regular bugs, open an issue describing the problem, expected
   behavior, and steps to reproduce.
 - For security vulnerabilities, do **not** open a public issue -- follow
-  the process in [SECURITY.md](https://gitlab.inesctec.pt/cpes/european-projects/aieffect/gridarena/-/blob/main/.github/SECURITY.md) instead.
+  the process in [SECURITY.md](https://github.com/AI-EFFECT/GridArena/blob/main/.github/SECURITY.md) instead.

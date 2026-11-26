@@ -135,12 +135,9 @@
   // ── Poll active runs ──
 
   var hasActive = false;
-  document.querySelectorAll('#runsTable tbody tr').forEach(function (row) {
-    var cells = row.cells;
-    if (cells && cells[5]) {
-      var txt = cells[5].textContent.trim().toLowerCase();
-      if (txt === 'queued' || txt === 'running') hasActive = true;
-    }
+  document.querySelectorAll('#runsTable [data-status]').forEach(function (badge) {
+    var st = badge.getAttribute('data-status');
+    if (st === 'queued' || st === 'running') hasActive = true;
   });
   if (hasActive) { setTimeout(function () { location.reload(); }, 10000); }
 

@@ -8,7 +8,7 @@ import numpy as np
 from stable_baselines3 import PPO
 
 from gridarena.rl.envs.single_agent import GridStabilityEnv
-from gridarena.rl.envs.multi_agent import MultiGridStabilityEnv
+from gridarena.rl.envs.multi_agent import node_index_feature
 from gridarena.rl.schemas import GridConfig
 
 
@@ -21,14 +21,11 @@ def evaluate_model(run_dir: str, loads: list[float] = None) -> dict:
     grid_config = GridConfig.from_dict(run_data["grid_config"])
     agent_type = run_data["agent_type"]
 
-    if agent_type == "single":
-        model_path = os.path.join(run_dir, "ppo_grid")
-        model = PPO.load(model_path)
-        env = GridStabilityEnv(grid_config)
-    else:
-        model_path = os.path.join(run_dir, "ppo_multiagent")
-        model = PPO.load(model_path)
-        env = GridStabilityEnv(grid_config)
+    model_name = "ppo_grid" if agent_type == "single" else "ppo_multiagent"
+    model = PPO.load(os.path.join(run_dir, model_name))
+    # Both agent types are evaluated on the full-grid env; the multi-agent policy
+    # is queried node by node below.
+    env = GridStabilityEnv(grid_config)
 
     obs, _ = env.reset()
 
@@ -46,17 +43,16 @@ def evaluate_model(run_dir: str, loads: list[float] = None) -> dict:
     violations_init = int(np.sum(np.abs(v_init - 1.0) > grid_config.violation_threshold))
 
     if agent_type == "multi":
+        # Same per-agent observation as training; node 0 (PT) is not an agent.
         actions = np.zeros(grid_config.n_nodes, dtype=np.float32)
-        for i in range(grid_config.n_nodes):
+        for i in range(1, grid_config.n_nodes):
             node_obs = {
                 "voltages_pu": obs["voltages_pu"][i:i+1],
                 "p_normalized": obs["p_normalized"][i:i+1],
+                "node_index": np.array([node_index_feature(i, grid_config.n_nodes)], dtype=np.float32),
             }
-            act, _ = model.predict(np.expand_dims(
-                np.concatenate([node_obs["voltages_pu"], node_obs["p_normalized"]]),
-                axis=0,
-            ) if False else node_obs, deterministic=True)
-            actions[i] = act[0] if isinstance(act, np.ndarray) else act
+            act, _ = model.predict(node_obs, deterministic=True)
+            actions[i] = np.asarray(act).reshape(-1)[0]
         action = actions
     else:
         action, _ = model.predict(obs, deterministic=True)

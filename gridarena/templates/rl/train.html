@@ -105,7 +105,7 @@
   </div>
   <div class="field">
     <label style="min-width:180px;" title="Multiplier for quadratic violation penalty. Higher = more aggressive correction.">Reward Scale</label>
-    <input id="rewardScale" class="input" type="number" value="100" step="10" min="1" style="width:180px;">
+    <input id="rewardScale" class="input" type="number" value="100" step="any" min="1" style="width:180px;">
   </div>
   <div class="field">
     <label style="min-width:180px;" title="Minimum power per node (kW). Negative = loads.">P Min (kW)</label>
@@ -121,7 +121,7 @@
   </div>
   <div class="field">
     <label style="min-width:180px;" title="Scale factor for DB admittances. 1.0 = physical values.">Admittance Scale</label>
-    <input id="admittanceScale" class="input" type="number" value="1.0" step="0.1" min="0.01" style="width:180px;">
+    <input id="admittanceScale" class="input" type="number" value="1.0" step="any" min="0.01" style="width:180px;">
   </div>
 </div>
 
@@ -209,7 +209,7 @@
         <td>{{ run.timesteps }}</td>
         <td><span class="muted" style="font-size:11px;">—</span></td>
         <td>
-          <span class="status-badge status-badge--{{ run.status }}">{{ run.status }}</span>
+          <span class="status-badge status-badge--{{ run.status }}" data-status="{{ run.status }}">{{ 'stopping' if run.cancel_requested else run.status }}</span>
           {% if run.status == 'failed' and run.error %}
           <span class="muted" style="font-size:10px; display:block; margin-top:2px; color:var(--color-danger);">{{ run.error[:60] }}</span>
           {% endif %}
@@ -218,6 +218,9 @@
         <td>
           <div class="row-actions">
             <a href="/rl/ui/{{ run.run_id }}" class="btn btn-primary" style="height:28px; padding:0 10px; font-size:11px;">View</a>
+            {% if run.status in ['queued', 'running'] and not run.cancel_requested %}
+            <button type="button" class="btn-sm-danger" data-cancel-url="/rl/runs/{{ run.run_id }}/cancel">Stop</button>
+            {% endif %}
           </div>
         </td>
       </tr>
@@ -232,4 +235,5 @@
 
 {% block scripts %}
 <script src="/static/js/rl-train.js"></script>
+<script src="/static/js/run-cancel.js"></script>
 {% endblock %}

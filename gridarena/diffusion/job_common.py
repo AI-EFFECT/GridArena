@@ -24,6 +24,31 @@ def update_run_config(run_dir: str, updates: dict) -> None:
         json.dump(data, f, indent=2)
 
 
+def mark_cancelled(run_dir: str) -> dict:
+    """Record that a job stopped because its run was cancelled."""
+    from datetime import datetime, timezone
+
+    update_run_config(run_dir, {
+        "status": "cancelled",
+        "completed_at": datetime.now(timezone.utc).isoformat(),
+    })
+    logger.info("Diffusion job in %s cancelled", run_dir)
+    return {"status": "cancelled"}
+
+
+def resolve_normalisation(run_data: dict, data: np.ndarray) -> Tuple[float, float]:
+    """Return (power_subtract, power_rescale): fixed values from the request, or
+    the mean / std of ``data`` for "auto". Jobs with a held-out split pass only
+    the training split so the held-out days don't leak into the scaling."""
+    raw_subtract = run_data.get("power_subtract", "auto")
+    raw_rescale = run_data.get("power_rescale", "auto")
+    power_subtract = float(np.mean(data)) if raw_subtract == "auto" else float(raw_subtract)
+    power_rescale = float(np.std(data)) if raw_rescale == "auto" else float(raw_rescale)
+    if power_rescale == 0:
+        power_rescale = 1.0
+    return power_subtract, power_rescale
+
+
 def load_snapshots_and_config(run_data: dict) -> Tuple[np.ndarray, "object", int, int]:
     """Load daily power snapshots from the DB and build a training config.
 
@@ -46,13 +71,7 @@ def load_snapshots_and_config(run_data: dict) -> Tuple[np.ndarray, "object", int
         require_even_nodes=require_even,
     )
 
-    # Resolve "auto" normalisation from the training data.
-    raw_subtract = run_data.get("power_subtract", "auto")
-    raw_rescale = run_data.get("power_rescale", "auto")
-    power_subtract = float(np.mean(power_snapshots)) if raw_subtract == "auto" else float(raw_subtract)
-    power_rescale = float(np.std(power_snapshots)) if raw_rescale == "auto" else float(raw_rescale)
-    if power_rescale == 0:
-        power_rescale = 1.0
+    power_subtract, power_rescale = resolve_normalisation(run_data, power_snapshots)
 
     dp_enabled = run_data.get("dp_enabled", False)
 
@@ -72,6 +91,7 @@ def load_snapshots_and_config(run_data: dict) -> Tuple[np.ndarray, "object", int
         dp_max_grad_norm=run_data.get("dp_max_grad_norm", 1.0),
         dp_noise_multiplier=run_data.get("dp_noise_multiplier", 1.0),
         dp_target_delta=run_data.get("dp_target_delta", 1e-5),
+        seed=run_data.get("seed", 0),
     )
 
     return power_snapshots, config, n_nodes, n_daily_timesteps

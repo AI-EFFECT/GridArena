@@ -17,7 +17,7 @@ from gridarena.database.offline_scenario_crud import (
     update_scenario_simulation_status,
 )
 from gridarena.database.digital_twin_crud import list_digital_twin_results
-from gridarena.powerflow.powerflow_algorithm import full_pf
+from gridarena.powerflow import three_phase as tp
 
 logger = logging.getLogger(__name__)
 
@@ -97,14 +97,15 @@ async def _execute_scenario(scenario_id: str, sc: dict):
     modified_connections = _apply_connection_changes(connections_list, connection_changes)
 
     node_ids = [n["node_id"] for n in nodes_list]
-    if "PT" in node_ids:
-        node_ids.remove("PT")
-        node_ids.insert(0, "PT")
+    if "PT" not in node_ids:
+        raise ValueError("The grid has no substation node 'PT' to use as reference.")
+    node_ids.remove("PT")
+    node_ids.insert(0, "PT")
     node_id_to_index = {nid: idx for idx, nid in enumerate(node_ids)}
     n_nodes = len(node_ids)
 
     pf_connections = []
-    pf_conn_data = []
+    pf_impedances = []
     for c in modified_connections:
         if c.get("disabled"):
             continue
@@ -112,10 +113,11 @@ async def _execute_scenario(scenario_id: str, sc: dict):
         ti = node_id_to_index.get(c["to_node_id"])
         if fi is None or ti is None:
             continue
-        pf_connections.append([fi, ti])
-        pf_conn_data.append((c["cable_id"], c.get("length", 1.0)))
+        pf_connections.append((fi, ti))
+        pf_impedances.append(_phase_impedances(cables_map.get(c["cable_id"]), c.get("length", 1.0)))
 
-    admittances = _compute_admittances(cables_map, pf_conn_data)
+    # Oriented from PT whatever the stored direction; raises NotRadialError on a loop.
+    radial = tp.build_radial_grid(n_nodes, pf_connections, pf_impedances, neutral_ratio=0.0)
 
     conn, cursor = db.get_db_connection()
     try:
@@ -159,28 +161,26 @@ async def _execute_scenario(scenario_id: str, sc: dict):
 
             S_array[idx] = complex(p, q)
 
-        reference_voltage = voltage_ref + 0j
-
         result = {"timestamp": ts}
         t0 = time.time()
         try:
-            volt_values = full_pf(
-                np.array(S_array),
-                pf_connections,
-                np.array(admittances),
-                reference_voltage,
-            )
+            volt_values, converged = tp.solve_single_phase(radial, S_array, phase, voltage_ref)
             node_voltages = {}
             for nid, idx in node_id_to_index.items():
+                if np.isnan(volt_values[idx]):  # not connected to PT once the changes are applied
+                    continue
                 node_voltages[nid] = {
-                    "simulated_voltage": round(abs(volt_values[idx]), 4),
+                    "simulated_voltage": round(float(abs(volt_values[idx])), 4),
                     "power_active": S_array[idx].real,
                     "power_reactive": S_array[idx].imag,
                 }
 
-            result["convergence_status"] = "converged"
+            result["convergence_status"] = "converged" if converged else "not_converged"
             result["node_voltages"] = node_voltages
-            completed += 1
+            if converged:
+                completed += 1
+            else:
+                failed += 1
         except Exception as e:
             result["convergence_status"] = "failed"
             result["error"] = str(e)
@@ -253,20 +253,17 @@ def _apply_connection_changes(base_connections: list, changes: list) -> list:
     return list(conns.values())
 
 
-def _compute_admittances(cables_map: dict, conn_data: list) -> list:
-    admittances = []
-    for cable_id, length in conn_data:
-        cable = cables_map.get(cable_id)
-        if cable is None:
-            admittances.append([complex(0.01, 0.001)])
-            continue
-        z_real = cable.get("r_imp_real", cable.get("RImpReal", 0.01))
-        z_imag = cable.get("r_imp_imag", cable.get("RImpImag", 0.001))
-        z = complex(z_real, z_imag) * length
-        if z == 0:
-            z = complex(0.001, 0.0001)
-        admittances.append([1 / z])
-    return admittances
+def _phase_impedances(cable: Optional[dict], length: float) -> list:
+    """Series impedance in ohm of each phase (R, S, T) of a connection: the cable's
+    ohm/km values times its length in metres. A cable missing from the snapshot
+    gets a small placeholder impedance, as before."""
+    km = float(length or 0.0) / 1000.0
+    if cable is None:
+        return [complex(0.01, 0.001) * km] * 3
+    return [
+        complex(cable.get(f"{p}_imp_real") or 0.0, cable.get(f"{p}_imp_imag") or 0.0) * km
+        for p in ("r", "s", "t")
+    ]
 
 
 scenario_runner = ScenarioRunner()

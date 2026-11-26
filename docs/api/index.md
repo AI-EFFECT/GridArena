@@ -30,13 +30,43 @@ Each router is mounted under a fixed path prefix in `gridarena/app.py`:
 Requests and responses are JSON (`application/json`) except file uploads,
 which use `multipart/form-data`.
 
+## Units
+
+Every stored or exchanged electrical quantity uses plain SI units, with no
+k/M prefixes:
+
+| Quantity | Unit | Sign / convention |
+|---|---|---|
+| `power_active` | W | Load convention: positive = consumption, negative = generation (e.g. PV). |
+| `power_reactive` | VAr | Same load convention. |
+| `voltage_magnitude` | V | LV: phase-to-neutral. MV: line-to-line. |
+| `voltage_angle` | degrees | — |
+| Cable impedance | Ω/km | Per phase. |
+| Cable nominal current | A | — |
+
+What a power value covers depends on where it is stored:
+
+- **LV** (measurements, LV-level historical series): a row tagged with a
+  `phase` (`R`/`S`/`T`) is that phase's power, and the LV power flow
+  solves the three phases against phase-to-neutral references (e.g. 230 V)
+  — see [Power Flow](powerflow.md#models).
+- **MV** (MV- and Feeder-level historical series, MV connection-point
+  injections): power is the **three-phase total**, and the MV nominal
+  voltage (`nominal_voltage_kv`) is line-to-line. Where a series holds
+  per-phase rows instead, the three phases are summed to get the total (see
+  [PF Data Generation](pf-datagen.md#units-and-three-phase-convention)).
+
+The exceptions are a few user-facing inputs that state their own unit,
+namely the [RL](rl.md) environment's power range (kW), and display-only
+labels such as an MV grid's `nominal_voltage_kv` or a transformer's
+`rated_power_kva`.
+
 ## Authentication
 
 There is currently **no authentication or authorization** — every endpoint is
-open. `guess_id` / `user_id` fields used throughout the benchmark and
-state-estimation endpoints are caller-supplied identifiers, not verified
-credentials; they exist to let a single grid support multiple independent
-participants, not to restrict access. Treat any deployment of this API
+open. The `submission_name` of a benchmark submission is a caller-supplied
+label, not a verified credential; it groups a participant's attempts, it
+doesn't restrict who can see them. Treat any deployment of this API
 accordingly (e.g. put it behind a reverse proxy or VPN if it shouldn't be
 publicly reachable).
 
@@ -89,7 +119,7 @@ cost:
 |---|---|---|
 | Upload size | 200 MB | Every file-upload endpoint (grid, MV grid, measurements, historical, chat custom-agent documents). Exceeding it returns `413`. |
 | Row cap per request | 50,000 rows | `GET` endpoints that could otherwise return an entire table (historical records, measurements). Once the cap is hit, the response is truncated and includes `"truncated": true` plus a `"truncation_hint"` telling the caller to narrow the request with `start`/`end`. |
-| Submission array/dict size | 5,000 entries | Benchmark guess submissions (state estimation, phase/topology/voltage-control guesses) and chat tool lists. Exceeding it returns `422`. |
+| Code submission | 1 GB unpacked, 2,000 files; 900 s per run | Benchmark script uploads (`.zip` limits) and their evaluation (`GRIDARENA_SUBMISSION_TIMEOUT`). See [Code submissions](#code-submissions). |
 | Chat message length | 8,000 characters | `POST` chat messages; longer messages get a friendly rejection instead of being sent to the LLM backend. |
 
 ## Difficulty and noise profiles
@@ -112,13 +142,34 @@ seeded with a SHA-256 hash of `(grid_id, key, difficulty)`, so repeated calls
 with the same parameters return identical corrupted values, but different
 `difficulty` values produce independent noise draws.
 
-## Anonymisation pattern
+## Code submissions
 
-The three benchmarks that hide ground truth (Phase Identification, Voltage
-Control, and — via `NodeMask`/`GridMask` — State Estimation) all follow the
-same shape: a real identifier (`node_id`, `phase`, or `(grid_id, datetime)`)
-is mapped to a persistent random key the first time it's requested, and that
-mapping is reused on every subsequent call for the same input. Submissions
-reference the anonymised key, never the real identifier; scoring joins back
-through the mapping table server-side. See [Data Model › Benchmarks](../database-schema.md#benchmarks).
+All four benchmarks work the same way. Training data is downloadable from the
+grids marked for training. The test data is not: the participant downloads a
+submission template (`GET /<benchmark>/submission-template`), fills in its
+`predict` function with any method (from a heuristic to a PyTorch model), and
+uploads it (`POST /<benchmark>/submissions`, a `.py` or a `.zip` with
+`submission.py` and its weights). GridArena runs the script on the hidden test
+data and scores what it returns; the participant polls
+`GET /<benchmark>/submissions/{submission_id}` for the status, score and log,
+and `GET /<benchmark>/submissions` lists past attempts.
 
+Each submission is stored under `gridarena/benchmarks/submissions/runs/<submission_id>/`
+(`run.json`, `log.txt` and the uploaded `code/`). To evaluate it, the server
+builds the test inputs from the database, writes them next to the code, and
+runs `harness.py` in a sandbox, which imports `submission.py`, calls `predict`
+once per input and writes the results back. The ground truth never leaves the
+server process, identifiers in the inputs are random per submission, and the
+test inputs are deleted once the run is scored. Runs queue on
+`GRIDARENA_SUBMISSION_WORKERS` workers (default 1); a run that was queued or
+running when the server stopped is marked `failed` on restart.
+
+The sandbox is set with `GRIDARENA_SUBMISSION_SANDBOX`:
+
+| Backend | Isolation | Use for |
+|---|---|---|
+| `subprocess` (default) | A child Python process with a stripped environment (no database DSN or API keys). It still runs as the server's OS user, with that user's file and network access. | Trusted submitters: local or in-house deployments. |
+| `docker` | A throw-away container from `GRIDARENA_SUBMISSION_IMAGE` (default `gridarena`, this repo's image) with no network, a read-only root filesystem, `GRIDARENA_SUBMISSION_MEMORY` (4g) / `GRIDARENA_SUBMISSION_CPUS` (2) limits and only the run directory mounted. | Any deployment open to untrusted users. Needs the `docker` CLI on the server; when the server itself runs in a container, the run directory must be at the same path on the host. |
+
+The whole run must finish within `GRIDARENA_SUBMISSION_TIMEOUT` seconds
+(default 900).

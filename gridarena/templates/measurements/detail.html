@@ -36,7 +36,7 @@
   <div class="summary-card"><div class="summary-card__value" id="scAvgV">—</div><div class="summary-card__label">Avg Voltage (V)</div></div>
   <div class="summary-card"><div class="summary-card__value" id="scMinV">—</div><div class="summary-card__label">Min Voltage (V)</div></div>
   <div class="summary-card"><div class="summary-card__value" id="scMaxV">—</div><div class="summary-card__label">Max Voltage (V)</div></div>
-  <div class="summary-card"><div class="summary-card__value" id="scMaxP">—</div><div class="summary-card__label">Max Active Power (kW)</div></div>
+  <div class="summary-card"><div class="summary-card__value" id="scMaxP">—</div><div class="summary-card__label">Max Active Power (W)</div></div>
   <div class="summary-card"><div class="summary-card__value" id="scCount">—</div><div class="summary-card__label">Records</div></div>
 </div>
 
@@ -87,7 +87,7 @@
         Heatmap
         <select id="heatmapMetric" style="margin-left:12px; height:28px; font-size:12px;">
           <option value="voltage">Voltage (V)</option>
-          <option value="power">Active Power (kW)</option>
+          <option value="power">Active Power (W)</option>
         </select>
       </h4>
       <div id="chartHeatmap" style="height:380px;"></div>
@@ -109,8 +109,8 @@
     <label>Metric:</label>
     <select id="tsMetric">
       <option value="voltage_magnitude">Voltage (V)</option>
-      <option value="power_active">Active Power (kW)</option>
-      <option value="power_reactive">Reactive Power (kVAr)</option>
+      <option value="power_active">Active Power (W)</option>
+      <option value="power_reactive">Reactive Power (VAr)</option>
     </select>
     <button class="btn btn-primary" type="button" id="tsUpdate">Update</button>
   </div>
@@ -156,8 +156,8 @@
           <th>Datetime</th>
           <th>Node</th>
           <th>Phase</th>
-          <th>Active Power (kW)</th>
-          <th>Reactive Power (kVAr)</th>
+          <th>Active Power (W)</th>
+          <th>Reactive Power (VAr)</th>
           <th>Voltage (V)</th>
         </tr>
       </thead>

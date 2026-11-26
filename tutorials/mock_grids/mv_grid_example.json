@@ -15,13 +15,16 @@
     {"node_id": "MV_CP1",   "coord_lat": 41.1515, "coord_lon": -8.6065, "node_type": "connection_point"},
     {"node_id": "MV_CP2",   "coord_lat": 41.1535, "coord_lon": -8.6035, "node_type": "connection_point"},
     {"node_id": "MV_CP3",   "coord_lat": 41.1475, "coord_lon": -8.6055, "node_type": "connection_point"},
-    {"node_id": "MV_CP4",   "coord_lat": 41.1500, "coord_lon": -8.6145, "node_type": "connection_point"}
+    {"node_id": "MV_CP4",   "coord_lat": 41.1500, "coord_lon": -8.6145, "node_type": "connection_point"},
+    {"node_id": "MV_SUB2",  "coord_lat": 41.1575, "coord_lon": -8.5985, "node_type": "substation"},
+    {"node_id": "MV_N6",    "coord_lat": 41.1558, "coord_lon": -8.5998, "node_type": "junction"},
+    {"node_id": "MV_CP5",   "coord_lat": 41.1568, "coord_lon": -8.6010, "node_type": "connection_point"}
   ],
 
   "cables": [
-    {"cable_id": "MV_CBL_A", "imp_real": 0.125, "imp_imag": 0.098, "nom_curr": 300.0},
-    {"cable_id": "MV_CBL_B", "imp_real": 0.162, "imp_imag": 0.112, "nom_curr": 250.0},
-    {"cable_id": "MV_CBL_C", "imp_real": 0.210, "imp_imag": 0.130, "nom_curr": 200.0}
+    {"cable_id": "MV_CBL_A", "imp_real": 0.125, "imp_imag": 0.098, "nom_curr": 300.0, "cap_uf_per_km": 0.31, "emerg_curr": 360.0},
+    {"cable_id": "MV_CBL_B", "imp_real": 0.162, "imp_imag": 0.112, "nom_curr": 250.0, "cap_uf_per_km": 0.27, "emerg_curr": 300.0},
+    {"cable_id": "MV_CBL_C", "imp_real": 0.210, "imp_imag": 0.130, "nom_curr": 200.0, "cap_uf_per_km": 0.24, "emerg_curr": 240.0}
   ],
 
   "connections": [
@@ -33,14 +36,19 @@
     {"connection_id": "MC06", "from_node_id": "MV_N1",  "to_node_id": "MV_CP1", "cable_id": "MV_CBL_C", "length": 150},
     {"connection_id": "MC07", "from_node_id": "MV_N5",  "to_node_id": "MV_CP2", "cable_id": "MV_CBL_C", "length": 120},
     {"connection_id": "MC08", "from_node_id": "MV_N3",  "to_node_id": "MV_CP3", "cable_id": "MV_CBL_B", "length": 180},
-    {"connection_id": "MC09", "from_node_id": "MV_N4",  "to_node_id": "MV_CP4", "cable_id": "MV_CBL_C", "length": 200}
+    {"connection_id": "MC09", "from_node_id": "MV_N4",  "to_node_id": "MV_CP4", "cable_id": "MV_CBL_C", "length": 200},
+    {"connection_id": "MC10", "from_node_id": "MV_SUB2", "to_node_id": "MV_N6", "cable_id": "MV_CBL_A", "length": 400},
+    {"connection_id": "MC11", "from_node_id": "MV_N6",  "to_node_id": "MV_CP5", "cable_id": "MV_CBL_C", "length": 150},
+    {"connection_id": "MC12", "from_node_id": "MV_N5",  "to_node_id": "MV_N6",  "cable_id": "MV_CBL_C", "length": 300,
+     "is_switch": true, "normally_open": true}
   ],
 
   "connection_points": [
     {"connection_point_id": "CP1", "node_id": "MV_CP1", "name": "Rua da Industria Substation"},
     {"connection_point_id": "CP2", "node_id": "MV_CP2", "name": "Zona Norte Substation"},
     {"connection_point_id": "CP3", "node_id": "MV_CP3", "name": "Parque Empresarial Substation"},
-    {"connection_point_id": "CP4", "node_id": "MV_CP4", "name": "Avenida Central Substation"}
+    {"connection_point_id": "CP4", "node_id": "MV_CP4", "name": "Avenida Central Substation"},
+    {"connection_point_id": "CP5", "node_id": "MV_CP5", "name": "Bairro Leste Substation"}
   ],
 
   "transformers": [
@@ -52,6 +60,10 @@
       "secondary_voltage_v": 230.0,
       "imp_real": 0.004,
       "imp_imag": 0.040,
+      "tap_pos": 1,
+      "tap_step_pct": 2.5,
+      "tap_min": -2,
+      "tap_max": 2,
       "name": "Rua da Industria 630kVA"
     },
     {
@@ -69,7 +81,7 @@
       "connection_point_id": "CP3",
       "rated_power_kva": 1000,
       "primary_voltage_kv": 20.0,
-      "secondary_voltage_v": 400.0,
+      "secondary_voltage_v": 230.0,
       "imp_real": 0.003,
       "imp_imag": 0.035,
       "name": "Parque Empresarial 1MVA"
@@ -83,6 +95,30 @@
       "imp_real": 0.008,
       "imp_imag": 0.050,
       "name": "Avenida Central 250kVA"
+    },
+    {
+      "transformer_id": "TR05",
+      "connection_point_id": "CP5",
+      "rated_power_kva": 400,
+      "primary_voltage_kv": 20.0,
+      "secondary_voltage_v": 230.0,
+      "name": "Bairro Leste 400kVA"
     }
+  ],
+  "regulators": [
+    {"regulator_id": "REG01", "connection_id": "MC04", "v_set_pu": 1.0, "deadband_pu": 0.02,
+     "tap_step_pct": 0.625, "tap_min": -16, "tap_max": 16, "tap_pos": 0}
+  ],
+  "shunts": [
+    {"shunt_id": "CB01", "node_id": "MV_N5", "q_step_kvar": 300.0, "n_steps": 2, "step": 1,
+     "name": "Capacitor bank 2 x 300 kvar"}
+  ],
+  "ders": [
+    {"der_id": "PV01", "node_id": "MV_N2", "type": "pv", "s_rated_kva": 2000.0, "control_mode": "q_v",
+     "name": "Solar park 2 MVA"},
+    {"der_id": "CHP01", "node_id": "MV_N3", "type": "chp", "s_rated_kva": 800.0, "profile_value": 0.9,
+     "control_mode": "fixed_pf", "cos_phi": 0.95, "excitation": "over", "name": "Industrial CHP"},
+    {"der_id": "WT01", "node_id": "MV_N4", "type": "wind", "s_rated_kva": 1500.0, "profile_value": 0.6,
+     "control_mode": "voltage", "v_set_pu": 1.01, "name": "Wind turbine, voltage control"}
   ]
 }

@@ -21,5 +21,5 @@ class CloneRequest(BaseModel):
 
 class PowerLimitsUpdate(BaseModel):
     power_limits: Dict[str, float] = Field(
-        ..., description="Map of node_id to max power in kW. Nodes not listed are uncapped.",
+        ..., description="Map of node_id to max power in W. Nodes not listed are uncapped.",
     )

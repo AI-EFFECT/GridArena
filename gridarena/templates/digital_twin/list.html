@@ -25,7 +25,7 @@
     <div class="dt-summary-card__label">Total Twins</div>
   </div>
   <div class="dt-summary-card">
-    <div class="dt-summary-card__value" style="color:#2563eb;">{{ running_count }}</div>
+    <div class="dt-summary-card__value" style="color:var(--color-accent);">{{ running_count }}</div>
     <div class="dt-summary-card__label">Running</div>
   </div>
   <div class="dt-summary-card">
@@ -71,7 +71,7 @@
         <td>{{ (t.last_run_at or '—')[:16] }}</td>
         <td>
           {% if t.last_error %}
-          <span class="muted" style="font-size:10px; color:#dc2626;" title="{{ t.last_error }}">{{ t.last_error[:40] }}{{ '...' if t.last_error|length > 40 else '' }}</span>
+          <span class="muted" style="font-size:10px; color:var(--color-danger);" title="{{ t.last_error }}">{{ t.last_error[:40] }}{{ '...' if t.last_error|length > 40 else '' }}</span>
           {% else %}
           <span class="muted">—</span>
           {% endif %}
@@ -85,12 +85,12 @@
             <button class="btn" style="height:28px; padding:0 10px; font-size:11px;" onclick="stopTwin('{{ t.digital_twin_id }}')">Stop</button>
             {% endif %}
             <button class="btn" style="height:28px; padding:0 10px; font-size:11px;" onclick="tickTwin('{{ t.digital_twin_id }}')">Tick</button>
-            <button class="btn" style="height:28px; padding:0 10px; font-size:11px; color:#dc2626;" onclick="deleteTwin('{{ t.digital_twin_id }}')">Delete</button>
+            <button class="btn" style="height:28px; padding:0 10px; font-size:11px; color:var(--color-danger);" onclick="deleteTwin('{{ t.digital_twin_id }}')">Delete</button>
           </div>
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="8" style="text-align:center; padding:24px; color:#6b7280;">No digital twins yet. <a href="/digital-twins/ui/new">Create your first one</a>.</td></tr>
+      <tr><td colspan="8" style="text-align:center; padding:24px; color:var(--color-text-muted);">No digital twins yet. <a href="/digital-twins/ui/new">Create your first one</a>.</td></tr>
       {% endfor %}
     </tbody>
   </table>

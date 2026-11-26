@@ -3,7 +3,7 @@ POWERFLOW_TOOLS = [
         "type": "function",
         "function": {
             "name": "run_power_flow",
-            "description": "Run the power flow algorithm for a specific grid and phase. Can optionally filter by datetime range. Results are stored and can be retrieved afterwards.",
+            "description": "Run the power flow for a grid over its measurement timestamps (optionally a datetime range). All three phases are solved together; the results replace the grid's previous results and can be retrieved afterwards.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -11,10 +11,14 @@ POWERFLOW_TOOLS = [
                         "type": "string",
                         "description": "The grid ID to run power flow on"
                     },
-                    "phase": {
+                    "mode": {
                         "type": "string",
-                        "enum": ["R", "S", "T"],
-                        "description": "The electrical phase to run power flow for"
+                        "enum": ["unbalanced", "balanced"],
+                        "description": "unbalanced (default): each phase keeps its own loads, cable impedance and substation voltage, with the neutral conductor modelled. balanced: each node's total power spread evenly over the phases."
+                    },
+                    "neutral_impedance_ratio": {
+                        "type": "number",
+                        "description": "Unbalanced mode only: neutral conductor impedance relative to the phase impedance. Default 1.0 (same as the phases); 0 = ideal neutral."
                     },
                     "start_time": {
                         "type": "string",
@@ -25,7 +29,7 @@ POWERFLOW_TOOLS = [
                         "description": "Optional end datetime in ISO format e.g. 2025-07-01T23:59:59"
                     }
                 },
-                "required": ["grid_id", "phase"]
+                "required": ["grid_id"]
             }
         }
     },
@@ -33,7 +37,7 @@ POWERFLOW_TOOLS = [
         "type": "function",
         "function": {
             "name": "get_power_flow_results",
-            "description": "Retrieve stored power flow results for a grid and phase. Returns voltage magnitude and angle per node per timestamp.",
+            "description": "Retrieve a grid's stored power flow results: the computed voltage magnitude and angle per node, phase and timestamp, next to the measured voltage where a meter measured it, plus the error of the computed voltages against the measured ones per node.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -43,11 +47,11 @@ POWERFLOW_TOOLS = [
                     },
                     "phase": {
                         "type": "string",
-                        "enum": ["R", "S", "T"],
-                        "description": "The electrical phase to retrieve results for"
+                        "enum": ["R", "S", "T", "N"],
+                        "description": "Optional: only this phase (N = neutral-to-ground voltage of unbalanced runs). Default: all phases."
                     }
                 },
-                "required": ["grid_id", "phase"]
+                "required": ["grid_id"]
             }
         }
     }

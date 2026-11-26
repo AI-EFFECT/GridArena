@@ -9,7 +9,12 @@ TOPOLOGY_TOOLS = [
                 "properties": {
                     "difficulty": {
                         "type": "string",
-                        "enum": ["clean", "easy", "medium", "hard"],
+                        "enum": [
+                            "clean",
+                            "easy",
+                            "medium",
+                            "hard"
+                        ],
                         "description": "Difficulty level of data corruption. Default is clean."
                     }
                 },
@@ -20,68 +25,65 @@ TOPOLOGY_TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "get_topology_discovery_data",
-            "description": "Retrieve anonymised historical measurement data for testing a topology discovery algorithm. True topology is hidden.",
+            "name": "get_topology_submission_template",
+            "description": "Get the blank Python submission script for the topology discovery benchmark: the predict function to fill in, with its input/output format documented.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "submit_topology_script",
+            "description": "Submit a Python script defining predict(grid) -> [[node_key, node_key], ...]: given every node key of a grid, its substation and the measurements per node, return the grid's edges. The server runs it on the hidden test grids and scores it (F1 of the predicted edges); returns a submission_id to check with get_topology_submission.",
             "parameters": {
                 "type": "object",
                 "properties": {
+                    "submission_name": {
+                        "type": "string",
+                        "description": "Label for this attempt, e.g. 'run_001' (letters, digits, '_', '-', '.')"
+                    },
+                    "code": {
+                        "type": "string",
+                        "description": "Full source of the Python script, based on the submission template"
+                    },
                     "difficulty": {
                         "type": "string",
-                        "enum": ["clean", "easy", "medium", "hard"],
-                        "description": "Difficulty level of data corruption. Default is clean."
+                        "enum": [
+                            "clean",
+                            "easy",
+                            "medium",
+                            "hard"
+                        ],
+                        "description": "Noise level of the test measurements. Default is clean."
                     }
                 },
-                "required": []
+                "required": [
+                    "submission_name",
+                    "code"
+                ]
             }
         }
     },
     {
         "type": "function",
         "function": {
-            "name": "submit_topology_guesses",
-            "description": "Submit topology guesses for a grid. Guesses are a list of edges represented as pairs of node indices.",
+            "name": "get_topology_submission",
+            "description": "Get the status (queued, running, completed, failed), score and log of a topology discovery script submission.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "guess_id": {
+                    "submission_id": {
                         "type": "string",
-                        "description": "The user or submission ID"
-                    },
-                    "grid_id": {
-                        "type": "string",
-                        "description": "The grid ID the guesses are for"
-                    },
-                    "guesses": {
-                        "type": "array",
-                        "description": "List of edges as pairs of node indices e.g. [[0,1],[1,2],[2,3]]",
-                        "items": {
-                            "type": "array",
-                            "items": {"type": "integer"}
-                        }
+                        "description": "The submission_id returned by submit_topology_script"
                     }
                 },
-                "required": ["guess_id", "grid_id", "guesses"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_topology_score",
-            "description": "Get the topology discovery accuracy score for a user on a specific grid. Returns correct edges, missed edges and overall accuracy.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "guess_id": {
-                        "type": "string",
-                        "description": "The user or submission ID"
-                    },
-                    "grid_id": {
-                        "type": "string",
-                        "description": "The grid ID to check the score for"
-                    }
-                },
-                "required": ["guess_id", "grid_id"]
+                "required": [
+                    "submission_id"
+                ]
             }
         }
     }

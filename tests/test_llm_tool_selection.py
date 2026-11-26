@@ -13,8 +13,8 @@ from gridarena.llm.tools import ALL_TOOLS, tools_for_agents
 def test_tools_for_agents_returns_only_the_named_agents_tools():
     names = {t["function"]["name"] for t in tools_for_agents(["PhaseAgent"])}
     assert names == {
-        "get_training_phase_data", "get_phase_identification_data",
-        "submit_phase_guesses", "get_phase_score",
+        "get_training_phase_data", "get_phase_submission_template",
+        "submit_phase_script", "get_phase_submission",
     }
     assert "get_historical_series_data" not in names
 
@@ -54,8 +54,8 @@ async def test_matched_message_sends_only_relevant_tools(mock_config, mock_dispa
     assert len(seen_tools) == 1
     names = {t["function"]["name"] for t in seen_tools[0]}
     assert names == {
-        "get_training_phase_data", "get_phase_identification_data",
-        "submit_phase_guesses", "get_phase_score",
+        "get_training_phase_data", "get_phase_submission_template",
+        "submit_phase_script", "get_phase_submission",
     }
 
 

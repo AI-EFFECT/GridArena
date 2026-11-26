@@ -12,7 +12,12 @@
 </div>
 
 <section class="panel">
-  <h3>Status: <span id="runStatus">{{ run.status }}</span></h3>
+  <h3>Status: <span id="runStatus">{{ 'stopping' if run.cancel_requested else run.status }}</span></h3>
+  {% if run.status in ['queued', 'running'] and not run.cancel_requested %}
+  <div class="field">
+    <button type="button" class="btn btn-danger" data-cancel-url="/diffusion/runs/{{ run.run_id }}/cancel">Stop job</button>
+  </div>
+  {% endif %}
 
   <table class="data-table" style="max-width:500px;">
     <tr><th>Job Type</th><td>{{ run.job_type }}</td></tr>
@@ -25,7 +30,7 @@
     <tr><th>Completed</th><td>{{ run.completed_at[:19] }}</td></tr>
     {% endif %}
     {% if run.error %}
-    <tr><th>Error</th><td style="color:#dc2626;">{{ run.error }}</td></tr>
+    <tr><th>Error</th><td style="color:var(--color-danger);">{{ run.error }}</td></tr>
     {% endif %}
   </table>
 </section>
@@ -63,10 +68,12 @@
 {% if run.job_type == 'privacy_check' and privacy_report %}
 <section class="panel">
   <h3>Privacy Audit Result:
-    <span class="status-badge status-badge--{{ 'completed' if privacy_report.overall_passed else 'failed' }}">
-      {{ 'PASSED' if privacy_report.overall_passed else 'FLAGGED' }}
+    {% set verdict = privacy_report.verdict or ('passed' if privacy_report.overall_passed else 'failed') %}
+    <span class="status-badge status-badge--{{ {'passed': 'completed', 'failed': 'failed', 'inconclusive': 'queued'}[verdict] }}">
+      {{ {'passed': 'PASSED', 'failed': 'FLAGGED', 'inconclusive': 'INCONCLUSIVE'}[verdict] }}
     </span>
   </h3>
+  {% if privacy_report.verdict_note %}<p class="muted" style="max-width:760px;">{{ privacy_report.verdict_note }}</p>{% endif %}
   <p class="muted" style="max-width:760px;">{{ privacy_report.warning }}</p>
 
   <h4 style="margin-top:14px;">Membership Inference (loss-threshold attack)</h4>
@@ -77,7 +84,7 @@
     <tr><th>Result</th><td>{{ 'PASS' if privacy_report.membership_inference.passed else 'FAIL' }}</td></tr>
   </table>
   <p class="muted" style="font-size:12px;">{{ privacy_report.membership_inference.note }}</p>
-  <img src="/diffusion/runs/{{ run.run_id }}/figure/mi_loss_distributions.png" alt="MI loss distributions" style="max-width:100%; margin-top:8px; border:1px solid #e5e7eb; border-radius:6px;">
+  <img src="/diffusion/runs/{{ run.run_id }}/figure/mi_loss_distributions.png" alt="MI loss distributions" style="max-width:100%; margin-top:8px; border:1px solid var(--color-border); border-radius:6px;">
 
   <h4 style="margin-top:20px;">Canary Memorisation</h4>
   <table class="data-table" style="max-width:560px;">
@@ -85,7 +92,7 @@
     <tr><th>Canaries flagged as memorised</th><td>{{ privacy_report.canary_memorisation.canaries_below_p5 | select | list | length }}</td></tr>
     <tr><th>Result</th><td>{{ 'PASS' if privacy_report.canary_memorisation.passed else 'FAIL' }}</td></tr>
   </table>
-  <img src="/diffusion/runs/{{ run.run_id }}/figure/canary_nn_distances.png" alt="Canary NN distances" style="max-width:100%; margin-top:8px; border:1px solid #e5e7eb; border-radius:6px;">
+  <img src="/diffusion/runs/{{ run.run_id }}/figure/canary_nn_distances.png" alt="Canary NN distances" style="max-width:100%; margin-top:8px; border:1px solid var(--color-border); border-radius:6px;">
 </section>
 {% elif run.job_type == 'privacy_check' and run.status == 'completed' %}
 <section class="panel"><p class="muted">Privacy report not found for this run.</p></section>
@@ -103,7 +110,7 @@
     <tr><th>{{ k }}</th><td>{{ "%.5f"|format(v) }}</td></tr>
     {% endfor %}
   </table>
-  <img src="/diffusion/runs/{{ run.run_id }}/figure/metrics_vs_epoch.png" alt="Metrics vs epoch" style="max-width:100%; margin-top:8px; border:1px solid #e5e7eb; border-radius:6px;">
+  <img src="/diffusion/runs/{{ run.run_id }}/figure/metrics_vs_epoch.png" alt="Metrics vs epoch" style="max-width:100%; margin-top:8px; border:1px solid var(--color-border); border-radius:6px;">
 
   <h4 style="margin-top:20px;">Per-checkpoint scores</h4>
   <div style="overflow-x:auto;">
@@ -111,7 +118,7 @@
       <thead><tr><th>Epoch</th><th>Composite</th><th>Temporal Frob</th><th>Spatial Frob</th><th>ACF MAE</th><th>Mean MAE</th><th>Std MAE</th></tr></thead>
       <tbody>
         {% for h in epoch_report.history %}
-        <tr{% if h.epoch == epoch_report.best_epoch %} style="font-weight:600; background:#f0fdf4;"{% endif %}>
+        <tr{% if h.epoch == epoch_report.best_epoch %} style="font-weight:600; background:var(--color-success-soft);"{% endif %}>
           <td>{{ h.epoch }}</td>
           <td>{{ "%.4f"|format(h.composite_score) }}</td>
           <td>{{ "%.4f"|format(h.temporal_frobenius) }}</td>
@@ -149,6 +156,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="/static/js/run-cancel.js"></script>
 <script>
 (function () {
   var status = '{{ run.status }}';
@@ -159,8 +167,8 @@
       try {
         var res = await fetch('/diffusion/runs/' + runId);
         var data = await res.json();
-        document.getElementById('runStatus').textContent = data.status;
-        if (data.status === 'completed' || data.status === 'failed') {
+        document.getElementById('runStatus').textContent = data.cancel_requested ? 'stopping' : data.status;
+        if (data.status === 'completed' || data.status === 'failed' || data.status === 'cancelled') {
           clearInterval(interval);
           location.reload();
         }
@@ -198,14 +206,12 @@
             type: 'heatmap',
             colorscale: 'RdBu',
             reversescale: true,
-            colorbar: { title: 'Power (kW)' }
-          }], {
+            colorbar: { title: 'Power (W)' }
+          }], GA.chartLayout({
             title: 'Generated Daily Power Snapshot',
             xaxis: { title: 'Timestep' },
-            yaxis: { title: 'Node', autorange: 'reversed' },
-            plot_bgcolor: '#f8fafc',
-            paper_bgcolor: '#ffffff'
-          });
+            yaxis: { title: 'Node', autorange: 'reversed' }
+          }));
         }
 
         if (window.Plotly) {

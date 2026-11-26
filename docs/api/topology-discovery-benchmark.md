@@ -2,11 +2,12 @@
 
 This benchmark tests a participant's ability to infer a grid's electrical
 topology (its edge list) from historical per-node power and voltage
-measurements. The workflow is: download measurement data for test grids via
-`GET /topology-data` (grid identity anonymised, topology withheld), submit a
-guessed edge list via `POST /submit-results`, then check accuracy via
-`GET /score`. `GET /training-topology-data` exposes the same kind of data for
-training grids, with the real topology included.
+measurements. Training data is downloadable, with the real topology included
+(`GET /training-topology-data`). The test grids are not: instead the
+participant downloads a submission template (`GET /submission-template`),
+fills in its `predict` function with their method, and uploads it
+(`POST /submissions`). GridArena runs the script on the hidden test grids in a
+sandbox and scores the edges it returns (`GET /submissions/{submission_id}`).
 
 **Base path:** `/topology_discovery_benchmark`
 
@@ -74,135 +75,80 @@ transformer/root node), if present, is always index `0`.
 
 ---
 
-### `GET /topology_discovery_benchmark/topology-data`
+### `GET /topology_discovery_benchmark/submission-template`
 
-Returns historical measurements for every grid marked
-`GridUsage.topology_detection_test = 1`, with the real `grid_id` replaced by
-a persistent anonymised key — a random UUID4, generated the first time a
-grid is seen and stored in a `GridAnonymisedMapping` table keyed on
-`grid_id` — and **the topology itself deliberately withheld**; it's the
-hidden target participants must infer from the measurement patterns. Unlike
-the [anonymisation pattern](index.md#anonymisation-pattern) used elsewhere,
-only the grid identity is hidden here: real `node_id` and `phase` values are
-still exposed in every record.
+Downloads `topology_discovery_submission.py`: the blank submission script. It documents the
+contract below, has a simple baseline in `predict` so it runs as-is, and can
+be run locally on a training download (`python topology_discovery_submission.py <training file>.json`)
+to check it the way the test data is scored.
 
-**Query parameters**
+**The contract.** The script defines `predict(grid)`. It is called once per
+test grid (every grid with `GridUsage.topology_detection_test = 1`):
 
-| Name | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `difficulty` | string | no | `clean` | One of `clean`, `easy`, `medium`, `hard` — see [difficulty/noise profiles](index.md#difficulty-and-noise-profiles). |
-
-**Response** `200`
-
-```json
-{
-  "difficulty": "clean",
-  "profile": {
-    "pq_rel_sigma": 0.0,
-    "v_mag_rel_sigma": 0.0,
-    "v_ang_rel_sigma": 0.0,
-    "outlier_prob": 0.0,
-    "outlier_scale": 0.0
-  },
-  "grids": {
-    "7c1e9e2a-6b0e-4a2f-9c3e-1f2a3b4c5d6e": {
-      "N1": [
-        {
-          "datetime": "2024-01-15T13:00:00",
-          "power_active": 1.243,
-          "power_reactive": 0.081,
-          "voltage_magnitude": 229.7,
-          "voltage_angle": -0.42,
-          "phase": "R"
-        }
-      ]
-    }
-  }
+```python
+grid = {
+    "nodes": ["3f9c1a2b7d4e", "a07be3c95f11", ...],  # every node, also unmetered ones
+    "root": "a07be3c95f11",                          # the substation ("PT"), or None
+    "measurements": {                                # metered nodes only
+        "3f9c1a2b7d4e": [
+            {"datetime": "2025-01-01T00:00:00", "phase": "R",
+             "power_active": 1.243, "power_reactive": 0.081,
+             "voltage_magnitude": 229.7, "voltage_angle": -0.42},
+            ...
+        ],
+        ...
+    },
 }
 ```
 
-**Errors**
+and returns the grid's edges as `[[node_key, node_key], ...]` (undirected).
+Node keys are random per submission and the node list is shuffled, so they
+carry no hint of the wiring. Noise is applied per the submission's
+`difficulty`, seeded per `(grid_id, node_id, phase, difficulty)`.
 
-| Status | Cause |
-|---|---|
-| `500` | No measurements found for the test grids, or another database error. |
+**Runtime.** Code at module level runs once, before the first `predict` call
+(load model weights there). The script can import what is installed on the
+server (numpy, pandas, scipy, networkx, torch, ...; see `requirements.txt`)
+and has no network access. See [Code submissions](index.md#code-submissions)
+for how runs are sandboxed and their limits.
 
 ---
 
-### `POST /topology_discovery_benchmark/submit-results`
+### `POST /topology_discovery_benchmark/submissions`
 
-Submits a guessed edge list for a grid, as a list of `[from_index, to_index]`
-pairs using the same `PT`-first node-index ordering as the `"node to
-corresponding index"` map above (and `gridarena.powerflow.get_grid_info
-.get_nodes_from_grid`, used by the [Grid](grid.md) router). `grid_id` may be
-either the real grid ID or the anonymised key returned by `GET
-/topology-data` — it's resolved to the real grid ID (via
-`GridAnonymisedMapping`) before being checked and stored. Resubmitting the
-same `(guess_id, grid_id)` overwrites the previous guess.
+Uploads a script for evaluation (`multipart/form-data`). The upload is checked
+for syntax errors and a top-level `predict` before it is queued; evaluation
+then runs in the background.
 
-**Request body**
-
-```json
-{
-  "guess_id": "team-alpha",
-  "grid_id": "7c1e9e2a-6b0e-4a2f-9c3e-1f2a3b4c5d6e",
-  "guesses": [[0, 1], [1, 2]]
-}
-```
-
-| Field | Type | Notes |
-|---|---|---|
-| `guess_id` | string | Caller-supplied participant identifier. |
-| `grid_id` | string | Real grid ID or anonymised grid key. |
-| `guesses` | array of `[int, int]` | Guessed edges as node-index pairs. At most 5000 entries. |
-
-**Response** `200`
-
-```json
-{
-  "status": "submitted",
-  "accepted_edges": 2
-}
-```
-
-**Errors**
-
-| Status | Cause |
-|---|---|
-| `422` | `grid_id` (after resolving an anonymised key to a real one, if applicable) doesn't exist in `grids`. |
-| `422` | Request body fails schema validation (e.g. more than 5000 edges). |
-| `500` | Database error. |
-
----
-
-### `GET /topology_discovery_benchmark/score`
-
-Computes edge-overlap accuracy between a stored guess and the grid's true
-connections: `correct` = guessed edges that are real, `incorrect_extra` =
-guessed edges that aren't, `missed` = real edges not guessed, `accuracy` =
-`correct / total_true_edges`. `grid_id` may be the real or anonymised ID; it
-is **echoed back exactly as given** (not resolved) so a query using the
-anonymised ID never leaks the real one.
-
-**Query parameters**
+**Form fields**
 
 | Name | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `guess_id` | string | yes | — | The participant identifier used when submitting. |
-| `grid_id` | string | yes | — | Real or anonymised grid ID. |
+| `file` | file | yes | — | A `.py` file, or a `.zip` with `submission.py` at its root (or inside a single top-level folder) next to its weights / helper modules. Max 200 MB. |
+| `submission_name` | string | yes | — | Label for this attempt, e.g. `alice_v1`: 1–64 letters, digits, `_`, `-` or `.`. |
+| `difficulty` | string | no | `clean` | Noise level of the test measurements — one of `clean`, `easy`, `medium`, `hard` (see [difficulty/noise profiles](index.md#difficulty-and-noise-profiles)). |
 
-**Response** `200`
+```bash
+curl -X POST http://localhost:8000/topology_discovery_benchmark/submissions \
+     -F file=@topology_discovery_submission.py \
+     -F submission_name=alice_v1 -F difficulty=medium
+```
+
+**Response** `202`: the submission record.
 
 ```json
 {
-  "guess_id": "team-alpha",
-  "grid_id": "7c1e9e2a-6b0e-4a2f-9c3e-1f2a3b4c5d6e",
-  "total_true_edges": 2,
-  "guessed_edges": 2,
-  "correct": 2,
-  "incorrect_extra": 0,
-  "missed": 0,
-  "accuracy": 1.0
+  "submission_id": "3f9c1a2b7d4e",
+  "benchmark": "topology_discovery",
+  "submission_name": "alice_v1",
+  "settings": {"difficulty": "medium"},
+  "filename": "topology_discovery_submission.py",
+  "status": "queued",
+  "created_at": "2026-10-25T13:31:32.847502+00:00",
+  "started_at": null,
+  "completed_at": null,
+  "score": null,
+  "error": null
 }
 ```
 
@@ -210,5 +156,64 @@ anonymised ID never leaks the real one.
 
 | Status | Cause |
 |---|---|
-| `404` | No stored guess (`TopologyUserGuesses` row) for that `(guess_id, grid_id)` pair. |
-| `500` | Database error. |
+| `413` | The upload is larger than 200 MB. |
+| `422` | Not a `.py`/`.zip`; a `.zip` without `submission.py`, with unsafe paths or symbolic links, or larger than 1 GB unpacked; a syntax error; no top-level `predict` (or an `async def` one); or an invalid `submission_name` or setting. |
+
+---
+
+### `GET /topology_discovery_benchmark/submissions/{submission_id}`
+
+Returns the submission record with its current `status`: `queued`,
+`running`, `completed` or `failed`, plus `log_tail` (the last 8000
+characters of what the script printed, and tracebacks). Poll it until it is
+`completed` or `failed`.
+
+**`score`** (once completed)
+
+```json
+{
+  "f1": 0.8116,
+  "precision": 0.8434,
+  "recall": 0.7821,
+  "correct": 140, "extra": 26, "missed": 39,
+  "grids": 3,
+  "failed_grids": 0,
+  "runtime_seconds": 1.42,
+  "per_grid": [
+    {"grid_id": "DEMO_LV_TEST", "nodes": 61, "true_edges": 60, "predicted_edges": 58,
+     "correct": 49, "extra": 9, "missed": 11, "invalid": 0,
+     "precision": 0.8448, "recall": 0.8167, "f1": 0.8305, "seconds": 0.47, "error": null}
+  ]
+}
+```
+
+- Precision = correct / predicted edges, recall = correct / true edges, both
+  over all test grids together; `f1` is the headline metric. (The old `GET /score`
+  reported only recall as "accuracy", which returning every possible pair maxed out.)
+- Edges are compared undirected and de-duplicated. A pair with an unknown key,
+  the same key twice, or not of the form `[key, key]` is counted in `invalid`
+  and ignored.
+- When `predict` raises for a grid, that grid's `error` holds the exception and
+  it predicts no edges; the other grids are still scored.
+
+A submission is `failed` (with `error` set and `score` null) when the script
+cannot be loaded (e.g. an import error), the run exceeds the time limit, or
+no grid is marked `topology_detection_test = 1`.
+
+**Errors**
+
+| Status | Cause |
+|---|---|
+| `404` | No submission of this benchmark with that id. |
+
+---
+
+### `GET /topology_discovery_benchmark/submissions`
+
+Lists this benchmark's submission records (without logs), newest first.
+
+| Name | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `submission_name` | string | no | — | Only submissions with this name. |
+
+**Response** `200`: `{"submissions": [ ...records... ]}`

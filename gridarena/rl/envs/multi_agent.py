@@ -8,13 +8,22 @@ from pettingzoo import ParallelEnv
 from stable_baselines3.common.vec_env import VecEnv
 
 from gridarena.powerflow.powerflow_algorithm import full_pf
+from gridarena.rl.envs.single_agent import KW_TO_W
 from gridarena.rl.schemas import GridConfig
 
 
-class MultiGridStabilityEnv(ParallelEnv):
-    """PettingZoo ParallelEnv where each grid node is an agent.
+def node_index_feature(i: int, n_nodes: int) -> float:
+    """Normalised position of node i in [0, 1], so a policy shared by every agent
+    can still tell the nodes apart."""
+    return float(i) / max(1, n_nodes - 1)
 
-    Takes a GridConfig with dynamic topology instead of reading from a hardcoded config file.
+
+class MultiGridStabilityEnv(ParallelEnv):
+    """PettingZoo ParallelEnv where each controllable grid node is an agent.
+
+    Node 0 is the transformer (PT): its power is fixed at zero, so it is not an
+    agent. Takes a GridConfig with dynamic topology instead of reading from a
+    hardcoded config file.
     """
 
     metadata = {"render_modes": [], "name": "multi_grid_stability_v0"}
@@ -31,13 +40,17 @@ class MultiGridStabilityEnv(ParallelEnv):
         self.violation_threshold = grid_config.violation_threshold
         self.reward_scale = grid_config.reward_scale
 
-        self.possible_agents = [f"node_{i}" for i in range(self.n_nodes)]
+        # agent name -> node index (PT, index 0, is excluded)
+        self.agent_node = {f"node_{i}": i for i in range(1, self.n_nodes)}
+        self.possible_agents = list(self.agent_node)
         self.agents = self.possible_agents[:]
+        self._rng = np.random.default_rng()
 
         self.observation_spaces = {
             agent: spaces.Dict({
                 "voltages_pu": spaces.Box(low=0.5, high=1.5, shape=(1,), dtype=np.float32),
                 "p_normalized": spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32),
+                "node_index": spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32),
             })
             for agent in self.possible_agents
         }
@@ -64,14 +77,15 @@ class MultiGridStabilityEnv(ParallelEnv):
             agent: {
                 "voltages_pu": np.array([v_pu_clipped[i]], dtype=np.float32),
                 "p_normalized": np.array([p_norm[i]], dtype=np.float32),
+                "node_index": np.array([node_index_feature(i, self.n_nodes)], dtype=np.float32),
             }
-            for i, agent in enumerate(self.possible_agents)
+            for agent, i in self.agent_node.items()
             if agent in self.agents
         }
 
     def _run_power_flow(self):
         self.v_state = full_pf(
-            power_measurements=self.p_kw_state,
+            power_measurements=self.p_kw_state * KW_TO_W,
             grid=self.grid,
             admitances=self.admittances,
             volt_pt=self.volt_ref + 0j,
@@ -80,9 +94,9 @@ class MultiGridStabilityEnv(ParallelEnv):
     def reset(self, seed=None, options=None):
         self.agents = self.possible_agents[:]
         if seed is not None:
-            np.random.seed(seed)
+            self._rng = np.random.default_rng(seed)
 
-        self.p_kw_state = np.random.uniform(
+        self.p_kw_state = self._rng.uniform(
             self.p_min_kw, self.p_max_kw, size=(self.n_nodes,),
         ).astype(np.float32)
         self.p_kw_state[0] = 0.0
@@ -97,7 +111,7 @@ class MultiGridStabilityEnv(ParallelEnv):
             return {}, {}, {}, {}, {}
 
         action_array = np.zeros(self.n_nodes, dtype=np.float32)
-        for i, agent in enumerate(self.possible_agents):
+        for agent, i in self.agent_node.items():
             if agent in actions:
                 val = actions[agent]
                 action_array[i] = val[0] if isinstance(val, np.ndarray) else val
@@ -122,12 +136,18 @@ class MultiGridStabilityEnv(ParallelEnv):
         dist_from_nominal = np.abs(v_pu - 1.0)
         violations = np.where(dist_from_nominal > self.violation_threshold, dist_from_nominal**2, 0)
         reward = -float(np.sum(violations) * self.reward_scale)
+        # Counted before the vec wrapper resets, so metrics describe this step.
+        num_violations = int(np.sum(dist_from_nominal > self.violation_threshold))
 
         rewards = {agent: reward for agent in self.agents}
         observations = self._get_obs()
         terminations = {agent: True for agent in self.agents}
         truncations = {agent: False for agent in self.agents}
-        infos = {agent: {"applied_action": float(constrained_action[i])} for i, agent in enumerate(self.agents)}
+        infos = {
+            agent: {"applied_action": float(constrained_action[self.agent_node[agent]]),
+                    "num_violations": num_violations}
+            for agent in self.agents
+        }
 
         if any(terminations.values()) or any(truncations.values()):
             self.agents = []
@@ -136,7 +156,7 @@ class MultiGridStabilityEnv(ParallelEnv):
 
 
 class PettingZooVecEnvWrapper(VecEnv):
-    """Wraps a PettingZoo ParallelEnv as a Stable-Baselines3 VecEnv."""
+    """Wraps a PettingZoo ParallelEnv as a Stable-Baselines3 VecEnv (one env per agent)."""
 
     def __init__(self, env: MultiGridStabilityEnv):
         self.env = env
@@ -151,7 +171,11 @@ class PettingZooVecEnvWrapper(VecEnv):
         self.current_obs = None
 
     def reset(self):
-        obs_dict, _ = self.env.reset()
+        # SB3 stores seeds from VecEnv.seed() in self._seeds; consume them once.
+        seeds = getattr(self, "_seeds", None) or [None]
+        obs_dict, _ = self.env.reset(seed=seeds[0])
+        if hasattr(self, "_reset_seeds"):
+            self._reset_seeds()
         self.current_obs = obs_dict
         return self._convert_obs(obs_dict)
 
@@ -185,17 +209,21 @@ class PettingZooVecEnvWrapper(VecEnv):
         return self._convert_obs(obs_dict), rewards, dones, infos
 
     def _convert_obs(self, obs_dict):
-        voltages, p_norms = [], []
+        voltages, p_norms, node_idx = [], [], []
         for agent in self.possible_agents:
             obs = obs_dict.get(agent, {
                 "voltages_pu": np.array([1.0], dtype=np.float32),
                 "p_normalized": np.array([0.0], dtype=np.float32),
+                "node_index": np.array(
+                    [node_index_feature(self.env.agent_node[agent], self.env.n_nodes)], dtype=np.float32),
             })
             voltages.append(obs["voltages_pu"])
             p_norms.append(obs["p_normalized"])
+            node_idx.append(obs["node_index"])
         return {
             "voltages_pu": np.array(voltages, dtype=np.float32),
             "p_normalized": np.array(p_norms, dtype=np.float32),
+            "node_index": np.array(node_idx, dtype=np.float32),
         }
 
     @property

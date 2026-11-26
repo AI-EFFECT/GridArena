@@ -3,14 +3,13 @@
 import logging
 import math
 import time
-from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
 import gridarena.database as db
-import gridarena.powerflow.get_grid_info as gd
 from gridarena.digital_twin.schemas import StreamedMeasurementBatch
-from gridarena.powerflow.powerflow_algorithm import full_pf
+from gridarena.powerflow import lv_runs
+from gridarena.powerflow import three_phase as tp
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +21,9 @@ def run_comparison(
 ) -> dict:
     """Run power flow using streamed measurements and compare against true voltages.
 
-    Returns a metrics dict suitable for insert_digital_twin_result().
+    The power flow is solved on ``phase`` with that phase's cable impedances,
+    from the substation node "PT", whatever direction the grid's connections
+    are stored in. Returns a metrics dict suitable for insert_digital_twin_result().
     """
     t0 = time.time()
     grid_id = batch.grid_id
@@ -30,16 +31,27 @@ def run_comparison(
 
     phase_measurements = [m for m in batch.measurements if m.phase == phase or m.phase is None]
 
+    metrics = {
+        "timestamp": timestamp,
+        "measurements_count": len(phase_measurements),
+        "powerflow_algorithm": "backward_forward_sweep",
+    }
+
     conn, cursor = db.get_db_connection()
     try:
-        node_id_to_index = gd.get_nodes_from_grid(grid_id, cursor)
-        connections, conn_data = gd.get_grid_connections(cursor, grid_id, node_id_to_index)
-        admittances = gd.get_grid_admitances(cursor, conn_data)
+        node_ids, radial = lv_runs.load_radial_grid(cursor, grid_id)
+    except (lv_runs.PowerFlowInputError, tp.NotRadialError) as e:
+        logger.error("Power flow failed for grid %s: %s", grid_id, e)
+        metrics["convergence_status"] = "failed"
+        metrics["details"] = {"error": str(e)}
+        metrics["execution_time_ms"] = round((time.time() - t0) * 1000, 2)
+        return metrics
     finally:
         conn.close()
 
-    n_nodes = len(node_id_to_index)
-    S_array = [0 + 0j] * n_nodes
+    node_id_to_index = {node_id: idx for idx, node_id in enumerate(node_ids)}
+    n_nodes = len(node_ids)
+    S_array = np.zeros(n_nodes, dtype=complex)
     true_voltages = {}
     missing_count = 0
     invalid_count = 0
@@ -64,38 +76,31 @@ def run_comparison(
             true_voltages[m.node_id] = m.voltage_magnitude
 
     for node_id in node_id_to_index:
-        if node_id not in mapped_nodes and node_id != "PT":
+        if node_id not in mapped_nodes and node_id != lv_runs.ROOT_NODE:
             missing_count += 1
 
-    reference_voltage = voltage_ref + 0j
-    pt_measurement = next((m for m in phase_measurements if m.node_id == "PT"), None)
+    reference_voltage = voltage_ref
+    pt_measurement = next((m for m in phase_measurements if m.node_id == lv_runs.ROOT_NODE), None)
     if pt_measurement and pt_measurement.voltage_magnitude > 0:
-        reference_voltage = pt_measurement.voltage_magnitude + 0j
+        reference_voltage = pt_measurement.voltage_magnitude
 
-    metrics = {
-        "timestamp": timestamp,
-        "measurements_count": len(phase_measurements),
-        "missing_measurements": missing_count,
-        "invalid_measurements": invalid_count,
-        "powerflow_algorithm": "backward_forward_sweep",
-    }
+    metrics["missing_measurements"] = missing_count
+    metrics["invalid_measurements"] = invalid_count
 
     try:
-        volt_values = full_pf(
-            np.array(S_array),
-            connections,
-            np.array(admittances),
-            reference_voltage,
-        )
-        metrics["convergence_status"] = "converged"
+        volt_values, converged = tp.solve_single_phase(radial, S_array, phase, reference_voltage)
+        metrics["convergence_status"] = "converged" if converged else "not_converged"
 
+        # Nodes not connected to PT have no voltage (NaN) and are left out.
         simulated_voltages = {}
         for node_id, idx in node_id_to_index.items():
-            simulated_voltages[node_id] = abs(volt_values[idx])
+            if not np.isnan(volt_values[idx]):
+                simulated_voltages[node_id] = float(abs(volt_values[idx]))
 
+        # PT is left out: its voltage is the reference the power flow starts from.
         voltage_errors = []
         for node_id, true_v in true_voltages.items():
-            if node_id in simulated_voltages:
+            if node_id in simulated_voltages and node_id != lv_runs.ROOT_NODE:
                 err = abs(simulated_voltages[node_id] - true_v)
                 voltage_errors.append(err)
 
@@ -107,7 +112,7 @@ def run_comparison(
         p_errors = []
         for m in phase_measurements:
             idx = node_id_to_index.get(m.node_id)
-            if idx is not None and m.node_id != "PT":
+            if idx is not None and m.node_id != lv_runs.ROOT_NODE:
                 sim_v = volt_values[idx]
                 if abs(sim_v) > 0:
                     sim_s = S_array[idx]

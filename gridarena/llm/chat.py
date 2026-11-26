@@ -348,6 +348,8 @@ class ChatSession:
     async def process_message(self, user_message: str) -> str:
         if not self._config["api_key"]:
             raise RuntimeError("LLM_API_KEY is not configured")
+        if not self._config["api_url"]:
+            raise RuntimeError("LLM_API_URL is not configured")
 
         if len(user_message) > MAX_USER_MESSAGE_CHARS:
             return (

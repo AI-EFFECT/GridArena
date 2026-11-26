@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+
+{% block head %}
+<link rel="stylesheet" href="/static/css/grid-dashboard.css">
+<link rel="stylesheet" href="/static/css/settings.css">
+{% endblock %}
+
+{% block content %}
+<div class="panel">
+  <div class="grid-dash-header">
+    <div>
+      <h2>Settings</h2>
+      <p>Environment variables used by GridArena. Changes are saved to <code>{{ env_file }}</code> and take precedence over the process environment.</p>
+    </div>
+  </div>
+</div>
+
+{% if error %}<div class="status-banner danger" style="margin-bottom:16px;">{{ error }}</div>{% endif %}
+{% if saved == '0' %}<div class="status-banner warning" style="margin-bottom:16px;">Nothing changed.</div>
+{% elif saved %}<div class="status-banner success" style="margin-bottom:16px;">Saved {{ saved }} variable{{ '' if saved == '1' else 's' }}.{% if restart %} Some of them are read only at startup — restart GridArena for them to take effect.{% endif %}</div>{% endif %}
+{% if not needs_key %}
+<div class="status-banner warning" style="margin-bottom:16px;">Anyone who can open this page can change these settings. Set <code>LVGPLAY_API_KEY</code> (under Access) to require a key.</div>
+{% endif %}
+
+<form method="post" action="/settings" autocomplete="off" class="cfg-form">
+  {% for group, rows in groups.items() %}
+  <section class="panel" style="margin-bottom:16px;">
+    <h3>{{ group }}</h3>
+    {% if rows %}
+    <table class="data-table cfg-table">
+      <thead><tr><th style="width:38%;">Variable</th><th>Value</th><th style="width:90px;">Remove</th></tr></thead>
+      <tbody>
+        {% for row in rows %}
+        {% set s = row.setting %}
+        <tr>
+          <td>
+            <div class="cfg-key">{{ s.key }}
+              {% if s.applies == 'restart' %}<span class="cfg-badge cfg-badge--restart" title="Read at startup">restart</span>{% endif %}
+              {% if row.source == 'file' %}<span class="cfg-badge cfg-badge--file" title="Stored in the settings file">saved</span>
+              {% elif row.source == 'environment' %}<span class="cfg-badge" title="Set by the process environment (e.g. docker -e)">env</span>{% endif %}
+            </div>
+            <div class="cfg-desc">{{ s.description }}</div>
+          </td>
+          <td>
+            {% if s.secret %}
+            <input type="password" name="val__{{ s.key }}" id="val__{{ s.key }}" autocomplete="new-password"
+                   placeholder="{{ (row.shown ~ ' — leave blank to keep') if row.is_set else (s.placeholder or 'not set') }}">
+            {% elif s.choices %}
+            <select name="val__{{ s.key }}">
+              <option value="" {{ 'selected' if not row.is_set }}>— default ({{ s.placeholder }}) —</option>
+              {% for c in s.choices %}<option value="{{ c }}" {{ 'selected' if row.shown == c }}>{{ c }}</option>{% endfor %}
+              {% if row.is_set and row.shown not in s.choices %}<option value="{{ row.shown }}" selected>{{ row.shown }} (current)</option>{% endif %}
+            </select>
+            {% else %}
+            <input type="{{ 'number' if s.kind == 'int' else 'text' }}" name="val__{{ s.key }}" value="{{ row.shown }}"
+                   placeholder="{{ s.placeholder or 'not set' }}" {% if s.kind == 'int' %}min="0" step="1"{% endif %}>
+            {% endif %}
+          </td>
+          <td class="cfg-del">
+            {% if row.is_set or row.source %}<label><input type="checkbox" name="del__{{ s.key }}" value="1"> remove</label>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
+    {% if group == 'Database' %}
+    <div class="cfg-actions">
+      <button type="button" class="btn-secondary" onclick="testDb()">Test connection</button>
+      <span id="dbTestResult" class="cfg-test-result">{{ 'Current: ' ~ (groups['Database'][0].shown or groups['Database'][1].shown) if db_configured else 'No database configured.' }}</span>
+    </div>
+    <p class="cfg-hint">Tests the connection string typed in <code>GRID_DB_DSN</code>, or the current one if the field is empty. A new connection string is always tested before it is saved.{% if in_docker %} Inside a container, use <code>host.docker.internal</code> instead of <code>localhost</code> for a database on the host.{% endif %}</p>
+    {% endif %}
+
+    {% if group == 'Custom' %}
+    <p class="cfg-hint">Add any other variable, for example the credential a digital twin reads through its <code>secret_ref</code>. Custom values are stored as secrets and never shown.</p>
+    <div class="field"><label for="new_key">New variable</label>
+      <input id="new_key" name="new_key" type="text" placeholder="NAME" pattern="[A-Za-z_][A-Za-z0-9_]*"
+             style="text-transform:uppercase;" oninput="this.value=this.value.toUpperCase()"></div>
+    <div class="field"><label for="new_value">Value</label>
+      <input id="new_value" name="new_value" type="password" autocomplete="new-password"></div>
+    {% endif %}
+  </section>
+  {% endfor %}
+
+  <section class="panel">
+    {% if needs_key %}
+    <div class="field" style="margin-top:0;"><label for="admin_key">Access key</label>
+      <input id="admin_key" name="admin_key" type="password" autocomplete="off" placeholder="LVGPLAY_API_KEY"></div>
+    {% endif %}
+    <div class="cfg-actions">
+      <button type="submit" class="btn btn-primary">Save changes</button>
+      <a href="/settings" class="btn-secondary">Discard</a>
+    </div>
+    <p class="cfg-hint">Variables marked <span class="cfg-badge cfg-badge--restart">restart</span> are read only when GridArena starts. Background workers already running keep their old values until they are restarted.</p>
+  </section>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  async function testDb() {
+    const out = document.getElementById('dbTestResult');
+    const dsnInput = document.getElementById('val__GRID_DB_DSN');
+    const keyInput = document.getElementById('admin_key');
+    out.className = 'cfg-test-result';
+    out.textContent = 'Testing…';
+    try {
+      const res = await fetch('/settings/test-db', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dsn: dsnInput ? dsnInput.value : '', admin_key: keyInput ? keyInput.value : '' }),
+      });
+      const data = await res.json();
+      out.className = 'cfg-test-result ' + (data.ok ? 'cfg-test-result--ok' : 'cfg-test-result--fail');
+      out.textContent = data.ok ? ('Connected to ' + data.target) : ('Failed: ' + data.error);
+    } catch (e) {
+      out.className = 'cfg-test-result cfg-test-result--fail';
+      out.textContent = 'Failed: ' + e.message;
+    }
+  }
+</script>
+{% endblock %}

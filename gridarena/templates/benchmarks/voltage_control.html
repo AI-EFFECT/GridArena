@@ -6,61 +6,55 @@
 
 {% block content %}
 
+<!-- Header -->
 <div class="panel">
   <div class="bench-header">
     <h2>Voltage Control Benchmark</h2>
-    <p>Download voltage violation scenarios, submit corrective actions and evaluate control performance.</p>
+    <p>Train on voltage-violation scenarios with reference solutions, then submit a Python script: GridArena runs it on the hidden test snapshots and scores its corrective actions.</p>
   </div>
 </div>
 
+<!-- Summary cards -->
 <div class="bench-summary">
   <div class="bench-summary-card">
-    <div class="bench-summary-card__value" id="scScenario">Overvoltages</div>
-    <div class="bench-summary-card__label">Scenario</div>
+    <div class="bench-summary-card__value" id="scSettings">Overvoltages / clean</div>
+    <div class="bench-summary-card__label">Scenario / Difficulty</div>
   </div>
   <div class="bench-summary-card">
-    <div class="bench-summary-card__value" id="scDifficulty">clean</div>
-    <div class="bench-summary-card__label">Difficulty</div>
-  </div>
-  <div class="bench-summary-card">
-    <div class="bench-summary-card__value" id="scSubmission">Not submitted</div>
-    <div class="bench-summary-card__label">Last Submission</div>
+    <div class="bench-summary-card__value" id="scStatus">Not submitted</div>
+    <div class="bench-summary-card__label">Submission Status</div>
   </div>
   <div class="bench-summary-card">
     <div class="bench-summary-card__value" id="scScore">—</div>
-    <div class="bench-summary-card__label">Last Score</div>
+    <div class="bench-summary-card__label">Score</div>
+  </div>
+  <div class="bench-summary-card">
+    <div class="bench-summary-card__value" id="scRuntime">—</div>
+    <div class="bench-summary-card__label">Model Runtime</div>
   </div>
 </div>
 
+<!-- Benchmark Setup -->
 <div class="bench-setup">
   <h3>Benchmark Setup</h3>
   <div class="field">
-    <label title="Identifies your submission. Use different values to keep multiple attempts (e.g. alice_v1, alice_v2).">Submission ID</label>
-    <input class="input" type="text" id="userId" placeholder="e.g. alice_v1" style="width:220px;">
+    <label title="Labels your submission. Use different values to keep multiple attempts (e.g. alice_v1, alice_v2).">Submission Name</label>
+    <input class="input" type="text" id="submissionName" placeholder="e.g. alice_v1" maxlength="64" style="width:220px;">
   </div>
   <div class="field">
-    <label title="The grid to evaluate voltage control on.">Grid ID</label>
-    <select id="gridId" class="input" style="width:220px;">
-      <option value="" disabled selected>Select a grid...</option>
-      {% for g in grids %}
-      <option value="{{ g }}">{{ g }}</option>
-      {% endfor %}
-    </select>
-  </div>
-  <div class="field">
-    <label title="Voltage threshold for selecting snapshots with violations (e.g. 230).">Voltage Limit (V)</label>
-    <input class="input" type="number" id="voltageLimit" placeholder="e.g. 230" step="any" style="width:220px;">
+    <label title="Voltage threshold that selects the snapshots with violations (e.g. 241.5 V for overvoltages).">Voltage Limit (V)</label>
+    <input class="input" type="number" id="voltageLimit" placeholder="e.g. 241.5" step="any" style="width:220px;">
   </div>
   <div class="field">
     <label title="Type of violation to target.">Scenario</label>
-    <select id="scenarioSelect" class="input" style="width:220px;" onchange="document.getElementById('scScenario').textContent = this.value;">
+    <select id="scenarioSelect" class="input" style="width:220px;">
       <option value="Overvoltages" selected>Overvoltages</option>
       <option value="Undervoltages">Undervoltages</option>
     </select>
   </div>
   <div class="field">
-    <label title="Filters snapshots by hardness level.">Difficulty</label>
-    <select id="difficultySelect" class="input" style="width:220px;" onchange="document.getElementById('scDifficulty').textContent = this.value;">
+    <label title="Filters the snapshots by hardness, for both the training download and the test snapshots your script is run on.">Difficulty</label>
+    <select id="difficultySelect" class="input" style="width:220px;">
       <option value="clean" selected>clean</option>
       <option value="easy">easy</option>
       <option value="medium">medium</option>
@@ -69,81 +63,49 @@
   </div>
 </div>
 
+<!-- Step 1: Download -->
 <div class="bench-step">
   <div class="bench-step__header">
     <div class="bench-step__number">1</div>
-    <h4 class="bench-step__title">Download Benchmark Data</h4>
+    <h4 class="bench-step__title">Get the Training Data and Template</h4>
   </div>
-  <p class="bench-step__desc">Download training scenarios (with reference solutions) and control data (anonymised, solutions hidden) for algorithm development.</p>
+  <p class="bench-step__desc">Download the training scenarios (snapshots with violations and their reference solutions) to develop your controller, and the submission template: a Python file with an empty <code>predict</code> function to fill in. Running the template locally on the training download compares its voltages with the reference solutions.</p>
+
   <div class="field">
-    <button class="btn-secondary" type="button" id="btnDownloadTrain" title="Training data with visible reference solutions.">Download Training Scenarios</button>
-    <button class="btn btn-primary" type="button" id="btnDownloadControl" title="Anonymised test data without solutions.">Download Control Data</button>
+    <button class="btn-secondary" type="button" id="btnDownloadTrain" title="Training snapshots and reference solutions for the selected limit, scenario and difficulty.">Download Training Dataset</button>
+    <a class="btn btn-primary" href="/voltage_control_benchmark/submission-template" download title="Python file with the predict() function to fill in.">Download Submission Template</a>
   </div>
   <p class="muted" id="downloadMsg"></p>
 </div>
 
-<div class="bench-step">
-  <div class="bench-step__header">
-    <div class="bench-step__number">2</div>
-    <h4 class="bench-step__title">Submit Results</h4>
-  </div>
-  <p class="bench-step__desc">Upload a JSON file containing your corrective power adjustments for each anonymised snapshot.</p>
-  <input id="resultFile" type="file" accept=".json" hidden>
-  <div id="resultDrop" class="drop" role="button" tabindex="0">
-    <div class="icon">&#11014;</div>
-    <div class="drop__title">Drop results JSON here or click to choose<br><span class="muted">Accepted: .json</span></div>
-    <div class="drop__label muted" id="resultFileLabel">No file selected</div>
-  </div>
-  <div class="field" style="margin-top:12px;">
-    <button class="btn btn-primary" type="button" id="btnSubmit" disabled>Submit Results</button>
-  </div>
-  <p class="muted" id="uploadMsg"></p>
-  <div class="bench-result" id="submitResult">
-    <h4>Submission Received</h4>
-    <p class="muted" id="submitResultMsg"></p>
-  </div>
-</div>
+{% set run_unit = "hidden test snapshot" %}
+{% include "benchmarks/_submission_steps.html" %}
 
-<div class="bench-step">
-  <div class="bench-step__header">
-    <div class="bench-step__number">3</div>
-    <h4 class="bench-step__title">Evaluate Score</h4>
-  </div>
-  <p class="bench-step__desc">Evaluate your voltage control performance — overall score, per-timestamp breakdown, and effort metrics.</p>
-  <div class="field">
-    <button class="btn btn-primary" type="button" id="btnScore">Check Score</button>
-  </div>
-  <div class="bench-result" id="scoreResult">
-    <h4>Score Results</h4>
-    <table id="scoreTable"></table>
-    <details style="margin-top:10px;">
-      <summary style="cursor:pointer; font-size:12px; color:var(--color-accent); font-weight:600;">Per-Timestamp Breakdown</summary>
-      <pre id="scoreDetail" style="font-size:11px; max-height:300px; overflow:auto; background:var(--color-surface-sunken); padding:10px; border-radius:var(--radius-sm); margin-top:8px;"></pre>
-    </details>
-  </div>
-  <div class="bench-result bench-result--error" id="scoreError">
-    <h4>Error</h4>
-    <p class="muted" id="scoreErrorMsg"></p>
-  </div>
-</div>
-
+<!-- Script contract -->
 <details class="bench-hint">
-  <summary>Results JSON Format</summary>
+  <summary>Submission Script Format</summary>
   <div class="bench-hint__body">
-    <p>The results file should be a JSON object mapping anonymised snapshot keys to corrective actions per node:</p>
-    <pre>{
-  "anon_key_1": [
-    {"node_id": "N1", "power_adjustment": -2.5, "voltage_after": 231.2},
-    {"node_id": "N2", "power_adjustment": 1.0, "voltage_after": 229.8}
-  ],
-  "anon_key_2": [...]
-}</pre>
-    <p>See <a href="/docs">API Docs</a> for the full schema specification.</p>
+    <p>The script must define a function <code>predict</code>. It is called once per test snapshot (a grid at a timestamp with at least one voltage violation):</p>
+    <pre>def predict(snapshot):
+    # snapshot = {
+    #     "datetime": "2025-07-01T13:00:00", "scenario": "Overvoltages",
+    #     "voltage_limit": 241.5, "nominal_voltage": 230.0, "voltage_band": 0.05,
+    #     "measurements": [
+    #         {"node_id": "NODE0001", "phase": "R", "power_active": 3.2,
+    #          "power_reactive": 0.4, "voltage_magnitude": 247.9, "voltage_angle": -0.6},
+    #         ...
+    #     ],
+    # }
+    return [{"node_id": "NODE0001", "phase": "R", "corrected_voltage": 241.0,
+             "adjusted_power_active": 2.1, "adjusted_power_reactive": 0.4}, ...]</pre>
+    <p>The actions use the same format as the reference solutions of the training data. A node and phase you don't return is scored as left unchanged. Per snapshot, the score rewards matching the reference corrected voltages (within 1 V) and then the least change in active power; snapshots without a reference are scored on how far the voltages move back towards nominal. The overall score (0&ndash;1, higher is better) is the node-weighted mean over all snapshots. Code at module level runs once before the first call, so load model weights there. The script has no network access and can use the packages installed on the server (numpy, pandas, scipy, torch, ...).</p>
+    <p>See <a href="/docs">API Docs</a> to submit from code: <code>POST /voltage_control_benchmark/submissions</code>.</p>
   </div>
 </details>
 
 {% endblock %}
 
 {% block scripts %}
+<script src="/static/js/benchmark-submissions.js"></script>
 <script src="/static/js/benchmark-voltage.js"></script>
 {% endblock %}

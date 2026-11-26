@@ -4,14 +4,22 @@ A "database" groups many standalone power/voltage series ("historicals")
 that all share the exact same timeline. Unlike MeasurementsData
 (schemas/measurements_data.py), none of this is tied to a specific grid or
 node -- each series just has a series_id (unique within its database) and a
-grid_level tag (MV/LV) saying which level it's meant for.
+grid_level tag (MV/LV/Feeder) saying which level it's meant for.
+
+Every database also has a data_type: "load" (consumption, the default) or a
+kind of generation injected into the grid -- "pv" (solar PV), "chp"
+(cogeneration), "wind", "hydro", "other_generation" or "injection_total" (all
+generation together). For generation, power_active is the power generated
+(positive = produced; small negative values such as inverter standby draw
+are kept). Every type uses exactly the same structure; the type only says
+what the values are.
 """
 
 from typing import List, Optional
 
 from pydantic import BaseModel, model_validator
 
-from gridarena.schemas.types import GridLevel, Phase
+from gridarena.schemas.types import GridLevel, HistoricalDataType, Phase
 
 
 class HistoricalValue(BaseModel):
@@ -44,6 +52,7 @@ class HistoricalDatabaseUpload(BaseModel):
     database_id: str
     name: Optional[str] = None
     description: Optional[str] = None
+    data_type: HistoricalDataType = "load"
     timestamps: List[str]
     historicals: List[HistoricalSeriesUpload]
 

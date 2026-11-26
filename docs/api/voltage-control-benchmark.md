@@ -1,12 +1,14 @@
 # Voltage Control Benchmark
 
 This benchmark asks a participant to correct voltage violations — over- or
-under-voltage snapshots — by adjusting node voltages and loads. The workflow
-is: download violation snapshots with hidden reference solutions via
-`GET /voltage-control-data`, submit corrected voltages/loads per anonymised
-snapshot key via `POST /submit-results`, then check score via `GET /score`.
-`GET /training-scenarios` returns the same kind of snapshot data for training
-grids, including the reference solutions and precomputed scoring metrics.
+under-voltage snapshots — by adjusting node voltages and loads. Training data
+is downloadable, including the reference solutions and precomputed metrics
+(`GET /training-scenarios`). The test snapshots are not: instead the
+participant downloads a submission template (`GET /submission-template`),
+fills in its `predict` function with their controller, and uploads it
+(`POST /submissions`). GridArena runs the script on the hidden test snapshots
+in a sandbox and scores its corrective actions
+(`GET /submissions/{submission_id}`).
 
 **Base path:** `/voltage_control_benchmark`
 
@@ -116,52 +118,91 @@ none of the matching snapshots have one, all of them are used instead
 
 ---
 
-### `GET /voltage_control_benchmark/voltage-control-data`
+### `GET /voltage_control_benchmark/submission-template`
 
-Returns testing snapshots for grids marked
-`GridUsage.voltage_control_test = 1`, filtered and bucketed by `difficulty`
-the same way as `/training-scenarios` above, but with reference solutions
-withheld and the `(grid_id, datetime)` pair replaced by a persistent
-anonymised key — see [anonymisation pattern](index.md#anonymisation-pattern).
-Real `node_id`/`phase` are still exposed; only the snapshot's timestamp
-identity is hidden.
+Downloads `voltage_control_submission.py`: the blank submission script. It documents the
+contract below, has a simple baseline in `predict` so it runs as-is, and can
+be run locally on a training download (`python voltage_control_submission.py <training file>.json`)
+to check it the way the test data is scored.
 
-**Query parameters**
+**The contract.** The script defines `predict(snapshot)`. It is called once
+per test snapshot: a grid with `GridUsage.voltage_control_test = 1` at a
+timestamp where at least one measurement is above (`Overvoltages`) or below
+(`Undervoltages`) `voltage_limit`. Snapshots with reference solutions are
+preferred and then filtered by hardness for the `difficulty`, exactly as the
+old `/voltage-control-data` endpoint selected them.
+
+```python
+snapshot = {
+    "datetime": "2025-07-01T13:00:00",
+    "scenario": "Overvoltages",
+    "voltage_limit": 241.5,
+    "nominal_voltage": 230.0,
+    "voltage_band": 0.05,
+    "measurements": [
+        {"node_id": "NODE0001", "phase": "R", "power_active": 3.2, "power_reactive": 0.4,
+         "voltage_magnitude": 247.9, "voltage_angle": -0.6},
+        ...
+    ],
+}
+```
+
+and returns its corrective actions, in the format of the training data's
+reference `solutions`:
+
+```python
+[{"node_id": "NODE0001", "phase": "R", "corrected_voltage": 241.0,
+  "adjusted_power_active": 2.1, "adjusted_power_reactive": 0.4}, ...]
+```
+
+`adjusted_power_*` are optional (unchanged when omitted).
+
+**Runtime.** Code at module level runs once, before the first `predict` call
+(load model weights there). The script can import what is installed on the
+server (numpy, pandas, scipy, networkx, torch, ...; see `requirements.txt`)
+and has no network access. See [Code submissions](index.md#code-submissions)
+for how runs are sandboxed and their limits.
+
+---
+
+### `POST /voltage_control_benchmark/submissions`
+
+Uploads a script for evaluation (`multipart/form-data`). The upload is checked
+for syntax errors and a top-level `predict` before it is queued; evaluation
+then runs in the background.
+
+**Form fields**
 
 | Name | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `voltage_limit` | float | yes | — | Threshold voltage in volts. |
+| `file` | file | yes | — | A `.py` file, or a `.zip` with `submission.py` at its root (or inside a single top-level folder) next to its weights / helper modules. Max 200 MB. |
+| `submission_name` | string | yes | — | Label for this attempt, e.g. `alice_v1`: 1–64 letters, digits, `_`, `-` or `.`. |
+| `voltage_limit` | number | yes | — | Voltage threshold (V) that selects the snapshots with violations. |
 | `Scenario` | string | no | `Overvoltages` | `Overvoltages` or `Undervoltages`. |
-| `difficulty` | string | no | `clean` | Hardness-tercile filter — see `/training-scenarios` above. |
+| `difficulty` | string | no | `clean` | Filters the snapshots by hardness — one of `clean` (all), `easy`, `medium`, `hard` (hardness terciles). |
 
-**Response** `200`
+```bash
+curl -X POST http://localhost:8000/voltage_control_benchmark/submissions \
+     -F file=@voltage_control_submission.py \
+     -F submission_name=alice_v1 \
+     -F voltage_limit=241.5 -F Scenario=Overvoltages -F difficulty=clean
+```
+
+**Response** `202`: the submission record.
 
 ```json
 {
-  "difficulty": "clean",
-  "difficulty_profile": {
-    "method": "none",
-    "t1": 0.0,
-    "t2": 0.0,
-    "preference": "solutions_only",
-    "preferred_population": 8
-  },
-  "scenario": "Overvoltages",
-  "voltage_limit": 253.0,
-  "grids": {
-    "grid001": {
-      "5b6c7d8e-9f0a-4b1c-8d2e-3f4a5b6c7d8e": [
-        {
-          "node_id": "N1",
-          "phase": "R",
-          "power_active": 1.243,
-          "power_reactive": 0.081,
-          "voltage_magnitude": 255.4,
-          "voltage_angle": -0.42
-        }
-      ]
-    }
-  }
+  "submission_id": "3f9c1a2b7d4e",
+  "benchmark": "voltage_control",
+  "submission_name": "alice_v1",
+  "settings": {"voltage_limit": 241.5, "scenario": "Overvoltages", "difficulty": "clean"},
+  "filename": "voltage_control_submission.py",
+  "status": "queued",
+  "created_at": "2026-10-25T13:31:32.847502+00:00",
+  "started_at": null,
+  "completed_at": null,
+  "score": null,
+  "error": null
 }
 ```
 
@@ -169,146 +210,76 @@ identity is hidden.
 
 | Status | Cause |
 |---|---|
-| `500` | No snapshot found above/below `voltage_limit` for the test grids, or another database error. |
+| `413` | The upload is larger than 200 MB. |
+| `422` | Not a `.py`/`.zip`; a `.zip` without `submission.py`, with unsafe paths or symbolic links, or larger than 1 GB unpacked; a syntax error; no top-level `predict` (or an `async def` one); or an invalid `submission_name` or setting. |
 
 ---
 
-### `POST /voltage_control_benchmark/submit-results`
+### `GET /voltage_control_benchmark/submissions/{submission_id}`
 
-Submits corrected voltages and (optionally) adjusted active/reactive power
-per node, for one or more anonymised snapshots returned by
-`GET /voltage-control-data`. Resubmitting the same `(guess_id, grid_id,
-anonymised_key)` overwrites the previous guess.
+Returns the submission record with its current `status`: `queued`,
+`running`, `completed` or `failed`, plus `log_tail` (the last 8000
+characters of what the script printed, and tracebacks). Poll it until it is
+`completed` or `failed`.
 
-**Request body**
-
-```json
-{
-  "guess_id": "team-alpha",
-  "grid_id": "grid001",
-  "guesses": {
-    "5b6c7d8e-9f0a-4b1c-8d2e-3f4a5b6c7d8e": [
-      {
-        "node_id": "N1",
-        "phase": "R",
-        "corrected_voltage": 231.5,
-        "adjusted_power_active": 0.912,
-        "adjusted_power_reactive": 0.075
-      }
-    ]
-  }
-}
-```
-
-| Field | Type | Notes |
-|---|---|---|
-| `guess_id` | string | Caller-supplied participant identifier. |
-| `grid_id` | string | Real grid ID (not an anonymised key). |
-| `guesses` | object (anonymised snapshot key → array of node solutions) | At most 5000 keys, each array capped at 5000 entries. |
-| `guesses[key][].node_id` | string | Real node ID. |
-| `guesses[key][].phase` | `"R"｜"S"｜"T"`, optional | |
-| `guesses[key][].corrected_voltage` | float | Required. |
-| `guesses[key][].adjusted_power_active` | float, optional | Treated as unchanged from the measured value at scoring time if omitted. |
-| `guesses[key][].adjusted_power_reactive` | float, optional | |
-
-**Response** `200`
+**`score`** (once completed)
 
 ```json
 {
-  "status": "submitted",
-  "accepted": 1
-}
-```
-
-**Errors**
-
-| Status | Cause |
-|---|---|
-| `422` | `grid_id` doesn't exist in `grids`. |
-| `422` | One or more submitted anonymised keys aren't in `VoltageTimestampMapping` for that grid. |
-| `422` | Request body fails schema validation (e.g. more than 5000 scenario keys or node solutions per key). |
-| `500` | Database error. |
-
----
-
-### `GET /voltage_control_benchmark/score`
-
-Scores a participant's submitted corrections against the true measurements
-and, where available, the reference `VoltageControlSolutions`, per snapshot,
-then averages the per-snapshot scores weighted by node count into
-`overall_score`. Only nodes/phases the participant actually submitted a
-`corrected_voltage` for (matching the original measurement's `phase`) are
-scored; nodes without a matching guess are skipped for that snapshot.
-
-Two scoring modes, chosen per snapshot:
-
-- **Reference solution available, with at least one matching node:** if the
-  participant's corrected voltages are within `1.0` V (mean absolute error)
-  of the reference solution's `corrected_voltage`, the score is purely an
-  *effort* factor — `1 / (1 + effort_norm / 0.15)`, where `effort_norm` is
-  total `|ΔP|` relative to total `|P|` across the scored nodes — so once you
-  match the optimum, moving less load scores higher (`mode:
-  "ref_voltage_then_effort"`). If the MAE exceeds `1.0` V, the effort factor
-  is further multiplied by a voltage-miss penalty that decays as the MAE
-  grows (`mode: "ref_voltage_miss_penalised"`).
-- **No reference solution, or no overlapping node:** falls back to an
-  outcome-only heuristic per node — `0.7 × max(voltage_score, 0) + 0.2 ×
-  power_penalty + 0.1 × fixed-violation bonus`, averaged across nodes — then
-  multiplied by the same effort factor (`mode: "outcome_only_fallback"`).
-
-**Query parameters**
-
-| Name | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `guess_id` | string | yes | — | The participant identifier used when submitting. |
-| `grid_id` | string | yes | — | Real grid ID. |
-
-**Response** `200`
-
-```json
-{
-  "guess_id": "team-alpha",
-  "grid_id": "grid001",
-  "total_nodes": 1,
-  "overall_score": 0.87,
-  "per_timestamp": [
-    {
-      "anonymised_key": "5b6c7d8e-9f0a-4b1c-8d2e-3f4a5b6c7d8e",
-      "datetime": "2024-01-15T13:00:00",
-      "nodes_total": 1,
-      "mode": "ref_voltage_then_effort",
-      "reference_available": true,
-      "reference_voltage_mae": 0.3,
-      "reference_voltage_tol": 1.0,
-      "voltage_factor": 1.0,
-      "effort_norm": 0.266,
-      "effort_factor": 0.87,
-      "timestamp_score": 0.87,
-      "average_node_score_diagnostic": 0.72,
-      "nodes": [
-        {
-          "node_id": "N1",
-          "phase": "R",
-          "measured_voltage": 255.4,
-          "corrected_voltage": 231.5,
-          "measured_power_active": 1.243,
-          "corrected_power_active": 0.912,
-          "voltage_score": 1.0,
-          "power_penalty": 0.734,
-          "bonus": 1.0,
-          "node_score": 0.847,
-          "reference_corrected_voltage": 231.8
-        }
-      ],
-      "reference_voltage_coverage": 1.0
-    }
+  "score": 0.7134,
+  "snapshots": 24, "nodes": 960, "failed_snapshots": 0, "grids": 2,
+  "runtime_seconds": 0.31,
+  "per_grid": [
+    {"grid_id": "DEMO_LV_TEST", "snapshots": 12, "nodes": 480, "score": 0.69,
+     "failed_snapshots": 0, "seconds": 0.15, "error": null}
+  ],
+  "per_snapshot": [
+    {"grid_id": "DEMO_LV_TEST", "datetime": "2025-07-01T13:00:00", "nodes": 40,
+     "changed_nodes": 3, "invalid": 0, "mode": "ref_voltage_then_effort",
+     "timestamp_score": 0.8571, "effort_norm": 0.025, "reference_voltage_mae": 0.42,
+     "seconds": 0.01, "error": null}
   ]
 }
 ```
 
+Each snapshot is scored with the old `GET /score` formula:
+
+- **With reference solutions:** if the mean absolute error between the returned
+  and the reference `corrected_voltage` is within 1 V, the snapshot score is the
+  effort factor `1 / (1 + effort / 0.15)`, where effort = Σ|ΔP| / Σ|P| (mode
+  `ref_voltage_then_effort`); otherwise it is the effort factor divided by
+  `1 + MAE²` (mode `ref_voltage_miss_penalised`).
+- **Without:** the mean per-node outcome score (0.7 × voltage moved towards
+  nominal + 0.2 × power kept + 0.1 × violation fixed) times the effort factor
+  (mode `outcome_only_fallback`).
+
+`score` is the node-weighted mean of the snapshot scores (0–1, higher is
+better). Two changes from the old endpoint stop a script from scoring better
+by answering less: every measured (node, phase) of a snapshot is scored — one
+the script doesn't return counts as unchanged — and every snapshot counts,
+including those the script returns nothing for. Actions are matched on
+(`node_id`, `phase`); an entry without a numeric `corrected_voltage` is counted
+in `invalid` and ignored. Like before, `corrected_voltage` is taken as reported:
+it is not checked with a power flow.
+
+A submission is `failed` (with `error` set and `score` null) when the script
+cannot be loaded (e.g. an import error), the run exceeds the time limit, or
+no test snapshot matches the settings.
+
 **Errors**
 
 | Status | Cause |
 |---|---|
-| `404` | No stored `VCUserGuesses` rows for `(guess_id, grid_id)`. |
-| `500` | Database error. |
+| `404` | No submission of this benchmark with that id. |
+
+---
+
+### `GET /voltage_control_benchmark/submissions`
+
+Lists this benchmark's submission records (without logs), newest first.
+
+| Name | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `submission_name` | string | no | — | Only submissions with this name. |
+
+**Response** `200`: `{"submissions": [ ...records... ]}`

@@ -1,7 +1,6 @@
 """Helper functions for voltage control router"""
 
 import math
-import uuid
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 # Nominal/band used consistently across difficulty metrics + scoring
@@ -87,44 +86,6 @@ def get_all_measurements_under(
     phase_type: str = None,
 ):
     return _get_violation_snapshots(cursor, voltage_threshold, "under", grids_to_include, phase_type)
-
-
-def build_load_voltage_timestamp_keys(
-    snapshots: Set[Tuple[str, Any]],
-    cursor,
-) -> Dict[Tuple[str, Any], str]:
-    """
-    Ensures every (grid_id, datetime) snapshot has a persistent anonymised key.
-
-    Args:
-        snapshots: set of (grid_id, datetime)
-    Returns:
-        mapping: {(grid_id, datetime) -> anonymised_key}
-    """
-    mapping: Dict[Tuple[str, Any], str] = {}
-    for grid_id, dt in snapshots:
-        cursor.execute(
-            """
-            SELECT anonymised_key
-            FROM "VoltageTimestampMapping"
-            WHERE grid_id = %s AND datetime = %s
-            """,
-            (grid_id, dt),
-        )
-        result = cursor.fetchone()
-        if result:
-            mapping[(grid_id, dt)] = result[0]
-        else:
-            anon_key = str(uuid.uuid4())
-            cursor.execute(
-                """
-                INSERT INTO "VoltageTimestampMapping" (grid_id, datetime, anonymised_key)
-                VALUES (%s, %s, %s)
-                """,
-                (grid_id, dt, anon_key),
-            )
-            mapping[(grid_id, dt)] = anon_key
-    return mapping
 
 
 def get_grid_complexity_metrics(cursor, grid_id: str) -> Dict[str, Any]:
@@ -294,3 +255,46 @@ def effort_factor(effort_norm: float) -> float:
     EFFORT_REF = 0.15  # ~15% relative total adjustment => factor ~ 0.5
     x = max(0.0, float(effort_norm))
     return 1.0 / (1.0 + (x / max(EFFORT_REF, 1e-9)))
+
+
+def quantile_thresholds(values: List[float]) -> Tuple[float, float]:
+    """
+    Return (t1, t2) so that:
+      easy:   score <= t1
+      medium: t1 < score < t2
+      hard:   score >= t2
+    using 33% and 66% quantiles.
+    """
+    if not values:
+        return 0.0, 0.0
+    s = sorted(values)
+    n = len(s)
+    i1 = int(round(0.33 * (n - 1)))
+    i2 = int(round(0.66 * (n - 1)))
+    return s[i1], s[i2]
+
+
+def difficulty_filter_keys(
+    hardness_by_key: Dict[Tuple[str, Any], float],
+    difficulty: str,
+) -> Tuple[set, Dict[str, float]]:
+    """
+    Filter scenario keys (grid_id, datetime) by hardness quantiles.
+    Returns (selected_keys, profile_metadata).
+    """
+    keys = list(hardness_by_key.keys())
+
+    if difficulty == "clean":
+        return set(keys), {"method": "none", "t1": 0.0, "t2": 0.0}
+
+    scores = [hardness_by_key[k] for k in keys]
+    t1, t2 = quantile_thresholds(scores)
+
+    if difficulty == "easy":
+        selected = {k for k in keys if hardness_by_key[k] <= t1}
+    elif difficulty == "medium":
+        selected = {k for k in keys if t1 < hardness_by_key[k] < t2}
+    else:  # hard
+        selected = {k for k in keys if hardness_by_key[k] >= t2}
+
+    return selected, {"method": "quantiles_33_66", "t1": float(t1), "t2": float(t2)}

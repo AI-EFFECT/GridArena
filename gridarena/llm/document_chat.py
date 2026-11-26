@@ -105,6 +105,8 @@ class DocumentChatSession:
     async def process_message(self, question: str) -> Dict[str, Any]:
         if not self.config.get("api_key"):
             raise RuntimeError("LLM_API_KEY is not configured")
+        if not self.config.get("api_url"):
+            raise RuntimeError("LLM_API_URL is not configured")
 
         excerpts = retrieval.search(self.chroma_db_path, self.agent_id, question, self.k)
         reference_block, marker_map = self._build_reference_block(excerpts)

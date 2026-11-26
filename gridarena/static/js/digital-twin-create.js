@@ -81,7 +81,7 @@ function loadGridGraph() {
       renderGraph(data.graph);
     })
     .catch(function(e) {
-      document.getElementById('gridGraph').innerHTML = '<p style="padding:20px; color:#dc2626;">Failed to load grid: ' + e.message + '</p>';
+      document.getElementById('gridGraph').innerHTML = '<p style="padding:20px; color:var(--color-danger);">Failed to load grid: ' + e.message + '</p>';
     });
 }
 
@@ -107,19 +107,19 @@ function renderGraph(graph) {
     var label = n.id;
     if (assigned) label += ' [' + assigned.phase + ']';
     nodeText.push(label);
-    if (n.type === 'pt') nodeColor.push('#dc2626');
-    else if (assigned) nodeColor.push('#059669');
-    else nodeColor.push('#3b82f6');
+    if (n.type === 'pt') nodeColor.push(GA.palette.red);
+    else if (assigned) nodeColor.push(GA.palette.green);
+    else nodeColor.push(GA.palette.cyan);
   });
 
   var edgeTrace = {
     x: edgeX, y: edgeY, mode: 'lines',
-    line: { color: '#94a3b8', width: 2 },
+    line: { color: GA.palette.slate, width: 2 },
     hoverinfo: 'none', type: 'scatter',
   };
   var nodeTrace = {
     x: nodeX, y: nodeY, mode: 'markers+text',
-    marker: { size: 14, color: nodeColor, line: { width: 1, color: '#fff' } },
+    marker: { size: 14, color: nodeColor, line: { width: 1, color: '#ffffff' } },
     text: nodeText, textposition: 'top center', textfont: { size: 10 },
     hoverinfo: 'text', type: 'scatter', customdata: graph.nodes.map(function(n) { return n.id; }),
   };
@@ -132,7 +132,7 @@ function renderGraph(graph) {
     hovermode: 'closest',
   };
 
-  Plotly.newPlot('gridGraph', [edgeTrace, nodeTrace], layout, { responsive: true, displayModeBar: false });
+  Plotly.newPlot('gridGraph', [edgeTrace, nodeTrace], GA.chartLayout(layout), { responsive: true, displayModeBar: false });
 
   document.getElementById('gridGraph').on('plotly_click', function(data) {
     if (data.points && data.points.length > 0) {
@@ -153,9 +153,9 @@ function addParamRow(key, value) {
   row.style.marginBottom = '4px';
   row.innerHTML =
     '<input class="input nf-param-key" type="text" placeholder="key" value="' + (key || '') + '" style="width:100px;">' +
-    '<span style="margin:0 4px; color:#6b7280;">=</span>' +
+    '<span style="margin:0 4px; color:var(--color-text-muted);">=</span>' +
     '<input class="input nf-param-val" type="text" placeholder="value" value="' + (value || '') + '" style="width:130px;">' +
-    '<button type="button" class="btn" style="height:26px; padding:0 8px; font-size:11px; margin-left:4px; color:#dc2626;" onclick="this.parentElement.remove()">&#x2715;</button>';
+    '<button type="button" class="btn" style="height:26px; padding:0 8px; font-size:11px; margin-left:4px; color:var(--color-danger);" onclick="this.parentElement.remove()">&#x2715;</button>';
   list.appendChild(row);
 }
 
@@ -281,7 +281,7 @@ function refreshAssignTable() {
   var body = document.getElementById('assignBody');
   body.innerHTML = '';
   if (keys.length === 0) {
-    body.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:16px; color:#6b7280;">No nodes assigned yet.</td></tr>';
+    body.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:16px; color:var(--color-text-muted);">No nodes assigned yet.</td></tr>';
     return;
   }
   keys.forEach(function(nid) {
@@ -296,7 +296,7 @@ function refreshAssignTable() {
       '<td>' + a.update_interval_seconds + 's</td>' +
       '<td style="font-size:11px; font-family:monospace;">' + (a.mapping.active_power || '—') + '</td>' +
       '<td style="font-size:11px; font-family:monospace;">' + (a.mapping.voltage_magnitude || '—') + '</td>' +
-      '<td><button type="button" class="btn" style="height:24px; padding:0 8px; font-size:10px; color:#dc2626;" onclick="event.stopPropagation(); removeAssignmentById(\'' + nid + '\')">Remove</button></td>';
+      '<td><button type="button" class="btn" style="height:24px; padding:0 8px; font-size:10px; color:var(--color-danger);" onclick="event.stopPropagation(); removeAssignmentById(\'' + nid + '\')">Remove</button></td>';
     body.appendChild(tr);
   });
 }
@@ -357,7 +357,7 @@ document.getElementById('createForm').addEventListener('submit', function(e) {
   var msg = document.getElementById('createMsg');
   var btn = document.getElementById('createBtn');
   msg.textContent = 'Creating digital twin...';
-  msg.style.color = '#475569';
+  msg.style.color = 'var(--color-text-muted)';
   btn.disabled = true;
 
   var assignments = Object.values(nodeAssignments);
@@ -389,12 +389,12 @@ document.getElementById('createForm').addEventListener('submit', function(e) {
   })
   .then(function(data) {
     msg.textContent = 'Digital twin created! Redirecting...';
-    msg.style.color = '#059669';
+    msg.style.color = 'var(--color-success)';
     setTimeout(function() { window.location.href = '/digital-twins/ui/' + data.digital_twin_id; }, 1200);
   })
   .catch(function(e) {
     msg.textContent = 'Error: ' + e.message;
-    msg.style.color = '#dc2626';
+    msg.style.color = 'var(--color-danger)';
     btn.disabled = false;
   });
 });

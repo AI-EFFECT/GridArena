@@ -1,5 +1,6 @@
 """RL Training Router — configure, train, evaluate voltage control models."""
 
+import asyncio
 import logging
 import os
 from pathlib import Path
@@ -10,6 +11,7 @@ from fastapi.templating import Jinja2Templates
 
 import gridarena.database as db
 from gridarena.rl.grid_loader import build_grid_config_from_db
+from gridarena.rl.jobs import evaluate_job
 from gridarena.rl.run_manager import registry
 from gridarena.rl.schemas import EvaluateRequest, TrainRequest, TrainResponse
 
@@ -64,6 +66,23 @@ async def get_run(run_id: str):
     return run.model_dump()
 
 
+@router.post("/runs/{run_id}/cancel")
+async def cancel_run(run_id: str):
+    """Stop a queued or running training run.
+
+    Queued runs are dropped immediately; running ones stop at the next
+    training-step check and then report status "cancelled".
+    """
+    run = registry.get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found.")
+    if run.status not in ("queued", "running"):
+        raise HTTPException(status_code=409, detail=f"Run is already {run.status}.")
+    run = registry.cancel(run_id)
+    message = "Run cancelled." if run.status == "cancelled" else "Cancellation requested; the run stops at its next step."
+    return {"run_id": run_id, "status": run.status, "message": message}
+
+
 @router.get("/runs/{run_id}/model")
 async def download_model(run_id: str):
     run = registry.get_run(run_id)
@@ -89,10 +108,8 @@ async def evaluate_run(run_id: str, request: EvaluateRequest = None):
     loads = request.loads if request else None
 
     try:
-        from gridarena.rl.evaluation import evaluate_model
-
-        result = evaluate_model(run_dir, loads=loads)
-        return result
+        # Runs in the registry's inference worker: SB3/torch never load here.
+        return await asyncio.wrap_future(registry.run_inference(evaluate_job, run_dir, loads))
     except Exception as e:
         logger.error("Evaluation failed for run %s: %s", run_id, e, exc_info=True)
         raise HTTPException(status_code=500, detail="Evaluation failed. See server logs for details.")
@@ -113,7 +130,7 @@ def _fetch_grid_ids() -> list[str]:
 async def rl_train_page(request: Request):
     grids = _fetch_grid_ids()
     runs = registry.list_runs()
-    return templates.TemplateResponse("rl/train.html", {
+    return templates.TemplateResponse(request, "rl/train.html", {
         "request": request,
         "title": "RL Training",
         "active": "rl",
@@ -127,7 +144,7 @@ async def rl_run_detail_page(request: Request, run_id: str):
     run = registry.get_run(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="Run not found.")
-    return templates.TemplateResponse("rl/run_detail.html", {
+    return templates.TemplateResponse(request, "rl/run_detail.html", {
         "request": request,
         "title": f"Run: {run_id}",
         "active": "rl",

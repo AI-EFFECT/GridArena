@@ -7,7 +7,7 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from gridarena.app import app
-from gridarena.digital_twin.scenario_runner import _apply_connection_changes, _compute_admittances
+from gridarena.digital_twin.scenario_runner import _apply_connection_changes, _phase_impedances
 
 client = TestClient(app)
 SC_PREFIX = "/offline-scenarios"
@@ -86,27 +86,25 @@ def test_apply_remove_nonexistent():
 
 
 # ═══════════════════════════════════════════════════════════════
-#  Unit: _compute_admittances
+#  Unit: _phase_impedances
 # ═══════════════════════════════════════════════════════════════
 
 
-def test_compute_admittances_basic():
-    cables = {"CBL1": {"r_imp_real": 0.32, "r_imp_imag": 0.078}}
-    conn_data = [("CBL1", 100.0)]
-    adm = _compute_admittances(cables, conn_data)
-    assert len(adm) == 1
-    assert adm[0][0] != 0
+def test_phase_impedances_per_phase_in_ohm():
+    cable = {"r_imp_real": 0.32, "r_imp_imag": 0.078, "s_imp_real": 0.4, "s_imp_imag": 0.08,
+             "t_imp_real": 0.5, "t_imp_imag": 0.09}
+    # ohm/km x 250 m
+    assert _phase_impedances(cable, 250.0) == pytest.approx([0.08 + 0.0195j, 0.1 + 0.02j, 0.125 + 0.0225j])
 
 
-def test_compute_admittances_missing_cable():
-    adm = _compute_admittances({}, [("MISSING", 50.0)])
-    assert len(adm) == 1
+def test_phase_impedances_missing_cable():
+    z = _phase_impedances(None, 50.0)
+    assert len(z) == 3 and all(abs(x) > 0 for x in z)
 
 
-def test_compute_admittances_zero_length():
-    cables = {"CBL1": {"r_imp_real": 0.32, "r_imp_imag": 0.078}}
-    adm = _compute_admittances(cables, [("CBL1", 0)])
-    assert len(adm) == 1
+def test_phase_impedances_zero_length():
+    cable = {"r_imp_real": 0.32, "r_imp_imag": 0.078}
+    assert _phase_impedances(cable, 0) == [0j, 0j, 0j]
 
 
 # ═══════════════════════════════════════════════════════════════

@@ -39,7 +39,7 @@
 <!-- Lifecycle controls -->
 <div class="dt-step">
   <div class="dt-step__header">
-    <div class="dt-step__number" style="background:#059669;">&#9654;</div>
+    <div class="dt-step__number dt-step__number--success">&#9654;</div>
     <h4 class="dt-step__title">Lifecycle Controls</h4>
   </div>
   <div class="dt-actions">
@@ -54,19 +54,19 @@
 <!-- Live Grid Graph -->
 <div class="dt-step">
   <div class="dt-step__header">
-    <div class="dt-step__number" style="background:#7c3aed;">&#x25C9;</div>
+    <div class="dt-step__number dt-step__number--purple">&#x25C9;</div>
     <h4 class="dt-step__title">Grid State</h4>
   </div>
   <p class="dt-step__desc">Nodes are colored by voltage deviation from nominal. Hover a node to see its current values. Click to inspect.</p>
   <div style="display:flex; gap:16px; flex-wrap:wrap;">
     <div style="flex:2; min-width:380px;">
-      <div id="liveGridGraph" style="background:var(--color-surface); border:1px solid var(--color-border); border-radius:var(--radius-md); min-height:400px;"></div>
+      <div id="liveGridGraph" class="chart-frame" style="min-height:400px;"></div>
       <div style="display:flex; gap:16px; justify-content:center; margin-top:8px; font-size:11px; color:var(--color-text-muted);">
-        <span><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#dc2626; margin-right:3px;"></span>PT</span>
-        <span><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#059669; margin-right:3px;"></span>Normal (&#177;5%)</span>
-        <span><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#f59e0b; margin-right:3px;"></span>Warning (5–10%)</span>
-        <span><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#ef4444; margin-right:3px;"></span>Violation (&gt;10%)</span>
-        <span><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#94a3b8; margin-right:3px;"></span>No data</span>
+        <span><span style="display:inline-block; width:10px; height:10px; border-radius:2px; background:#E5484D; margin-right:3px;"></span>PT</span>
+        <span><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#3FB950; margin-right:3px;"></span>Normal (&#177;5%)</span>
+        <span><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#F0883E; margin-right:3px;"></span>Warning (5–10%)</span>
+        <span><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#E5484D; margin-right:3px;"></span>Violation (&gt;10%)</span>
+        <span><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#6a90a8; margin-right:3px;"></span>No data</span>
       </div>
     </div>
     <div style="flex:1; min-width:240px;">
@@ -98,8 +98,8 @@
         <th>Node</th>
         <th>Phase</th>
         <th>Timestamp</th>
-        <th>Active Power (kW)</th>
-        <th>Reactive Power (kVAr)</th>
+        <th>Active Power (W)</th>
+        <th>Reactive Power (VAr)</th>
         <th>Voltage (V)</th>
         <th>Angle</th>
       </tr>
@@ -112,7 +112,7 @@
 <!-- Latest Metrics -->
 <div class="dt-step">
   <div class="dt-step__header">
-    <div class="dt-step__number" style="background:#0ea5e9;">&#x1D4DC;</div>
+    <div class="dt-step__number">&#x1D4DC;</div>
     <h4 class="dt-step__title">Latest Metrics</h4>
   </div>
   <div class="dt-metrics" id="metricsCards">
@@ -133,7 +133,7 @@
 <!-- Voltage comparison chart -->
 <div class="dt-step">
   <div class="dt-step__header">
-    <div class="dt-step__number" style="background:#f59e0b;">&#x26A1;</div>
+    <div class="dt-step__number dt-step__number--warning">&#x26A1;</div>
     <h4 class="dt-step__title">True vs Simulated Voltage</h4>
   </div>
   <div class="dt-chart" id="voltageChart"></div>

@@ -171,13 +171,13 @@
       var normalNodes = nodes.filter(function (n) { return n.type !== 'pt'; });
 
       Plotly.newPlot(container, [
-        { x: edgeX, y: edgeY, mode: 'lines', line: { width: 2, color: '#94a3b8' }, hoverinfo: 'none', showlegend: false },
+        { x: edgeX, y: edgeY, mode: 'lines', line: { width: 2, color: GA.palette.slate }, hoverinfo: 'none', showlegend: false },
         {
           x: ptNodes.map(function (n) { return n.x; }),
           y: ptNodes.map(function (n) { return n.y; }),
           text: ptNodes.map(function (n) { return n.id; }),
           mode: 'markers+text', textposition: 'top center', textfont: { size: 10 },
-          marker: { size: 14, color: '#dc2626', symbol: 'square', line: { width: 1, color: '#1f2937' } },
+          marker: { size: 14, color: GA.palette.red, symbol: 'square', line: { width: 1, color: '#ffffff' } },
           name: 'PT (Reference)', hoverinfo: 'text'
         },
         {
@@ -185,16 +185,15 @@
           y: normalNodes.map(function (n) { return n.y; }),
           text: normalNodes.map(function (n) { return n.id; }),
           mode: 'markers+text', textposition: 'top center', textfont: { size: 9 },
-          marker: { size: 10, color: '#2563eb', symbol: 'circle', line: { width: 1, color: '#1f2937' } },
+          marker: { size: 10, color: GA.palette.cyan, symbol: 'circle', line: { width: 1, color: '#ffffff' } },
           name: 'Node', hoverinfo: 'text'
         }
-      ], {
+      ], GA.chartLayout({
         showlegend: true, legend: { orientation: 'h', y: -0.05 },
         hovermode: 'closest',
         xaxis: { visible: false }, yaxis: { visible: false, scaleanchor: 'x' },
-        margin: { l: 10, r: 10, t: 10, b: 40 },
-        plot_bgcolor: '#ffffff', paper_bgcolor: '#ffffff'
-      }, { responsive: true });
+        margin: { l: 10, r: 10, t: 10, b: 40 }
+      }), { responsive: true });
     }
 
     if (window.Plotly) { go(); }

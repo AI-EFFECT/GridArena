@@ -92,9 +92,43 @@ gridarena/rl/runs/
 gridarena/diffusion/runs/
 gridarena/pf_datagen/runs/
 
+# Benchmark code submissions (uploaded scripts and their run records)
+gridarena/benchmarks/submissions/runs/
+
 # MkDocs local build output (Read the Docs builds this remotely)
 site/
 
 # No longer tracked -- kept locally only
 llm_fix_plan.md
 CHANGELOG.md
+
+# Writable runtime state inside the package (document-assistant storage)
+gridarena/data/llm/
+
+# Claude session working notes (kept locally only)
+audit.md
+improvement_plan.md
+
+# Platform video production (spec and progress log; the video project lives outside the repo)
+INSTRUCOES-VIDEO-SERVICO.md
+video_progress.md
+
+# Claude-produced material (diagrams, images, presentation, notes) -- kept locally only
+/diagrams/
+/presentation/
+/presentation_slides/
+/rl-agent-*.png
+/rl_tests.md
+
+# Standalone synthetic-data package (generated dataset inputs + runnable code)
+/datagen_package/
+/datagen_package1/
+/datagen_package3/
+/datagen_package4/
+
+# Conference PowerPoint deck and its build files
+/ppt_presentation/
+
+# Local source data and task notes kept out of git
+/energia-injetada-na-rede-de-distribuicao.csv
+/pv_farms_synthetic_generation.md

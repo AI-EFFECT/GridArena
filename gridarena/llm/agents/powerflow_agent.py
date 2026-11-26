@@ -4,15 +4,17 @@ from gridarena.routers.powerflow import get_power_flow_results, run_power_flow
 
 class PowerflowAgent(BaseAgent):
 
-    async def _run(self, grid_id: str, phase: str, start_time=None, end_time=None):
+    async def _run(self, grid_id: str, mode: str = "unbalanced", neutral_impedance_ratio: float = 1.0,
+                   start_time=None, end_time=None):
         self.last_queried_grid = grid_id
-        self._record("run_power_flow", grid_id=grid_id, phase=phase)
+        self._record("run_power_flow", grid_id=grid_id, mode=mode)
         return await self._call(
             run_power_flow,
-            grid_id=grid_id, phase=phase, start_time=start_time, end_time=end_time,
+            grid_id=grid_id, mode=mode, neutral_impedance_ratio=neutral_impedance_ratio,
+            start_time=start_time, end_time=end_time,
         )
 
-    async def _results(self, grid_id: str, phase: str):
+    async def _results(self, grid_id: str, phase=None):
         self.last_queried_grid = grid_id
         self._record("get_power_flow_results", grid_id=grid_id, phase=phase)
         return await self._call(get_power_flow_results, grid_id=grid_id, phase=phase)
@@ -20,9 +22,11 @@ class PowerflowAgent(BaseAgent):
     async def handle(self, tool_name: str, tool_args: dict):
         if tool_name == "run_power_flow":
             return await self._run(
-                grid_id=tool_args["grid_id"], phase=tool_args["phase"],
+                grid_id=tool_args["grid_id"],
+                mode=tool_args.get("mode", "unbalanced"),
+                neutral_impedance_ratio=tool_args.get("neutral_impedance_ratio", 1.0),
                 start_time=tool_args.get("start_time"), end_time=tool_args.get("end_time"),
             )
         elif tool_name == "get_power_flow_results":
-            return await self._results(grid_id=tool_args["grid_id"], phase=tool_args["phase"])
+            return await self._results(grid_id=tool_args["grid_id"], phase=tool_args.get("phase"))
         return await super().handle(tool_name, tool_args)

@@ -8,7 +8,12 @@
 </div>
 
 <section class="panel">
-  <h3>Status: <span id="runStatus">{{ run.status }}</span></h3>
+  <h3>Status: <span id="runStatus">{{ 'stopping' if run.cancel_requested else run.status }}</span></h3>
+  {% if run.status in ['queued', 'running'] and not run.cancel_requested %}
+  <div class="field">
+    <button type="button" class="btn btn-danger" data-cancel-url="/rl/runs/{{ run.run_id }}/cancel">Stop training</button>
+  </div>
+  {% endif %}
 
   <table class="data-table" style="max-width:400px;">
     <tr><th>Grid ID</th><td>{{ run.grid_id }}</td></tr>
@@ -19,7 +24,7 @@
     <tr><th>Completed</th><td>{{ run.completed_at[:19] }}</td></tr>
     {% endif %}
     {% if run.error %}
-    <tr><th>Error</th><td style="color:#dc2626;">{{ run.error }}</td></tr>
+    <tr><th>Error</th><td style="color:var(--color-danger);">{{ run.error }}</td></tr>
     {% endif %}
   </table>
 
@@ -52,6 +57,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="/static/js/run-cancel.js"></script>
 <script>
 (function () {
   var status = '{{ run.status }}';
@@ -62,8 +68,8 @@
       try {
         var res = await fetch('/rl/runs/' + runId);
         var data = await res.json();
-        document.getElementById('runStatus').textContent = data.status;
-        if (data.status === 'completed' || data.status === 'failed') {
+        document.getElementById('runStatus').textContent = data.cancel_requested ? 'stopping' : data.status;
+        if (data.status === 'completed' || data.status === 'failed' || data.status === 'cancelled') {
           clearInterval(interval);
           location.reload();
         }
@@ -93,16 +99,16 @@
           Plotly.newPlot('evalChart', [
             { x: labels, y: vInit, type: 'bar', name: 'Before' },
             { x: labels, y: vFinal, type: 'bar', name: 'After' }
-          ], {
+          ], GA.chartLayout({
             title: 'Voltage (p.u.) Before vs After',
             yaxis: { title: 'Voltage (p.u.)' },
             shapes: [
-              { type: 'line', y0: 1.1, y1: 1.1, x0: 0, x1: 1, xref: 'paper', line: { color: 'red', dash: 'dash' } },
-              { type: 'line', y0: 0.9, y1: 0.9, x0: 0, x1: 1, xref: 'paper', line: { color: 'red', dash: 'dash' } },
-              { type: 'line', y0: 1.0, y1: 1.0, x0: 0, x1: 1, xref: 'paper', line: { color: 'green', dash: 'dot' } }
+              { type: 'line', y0: 1.1, y1: 1.1, x0: 0, x1: 1, xref: 'paper', line: { color: GA.palette.red, dash: 'dash' } },
+              { type: 'line', y0: 0.9, y1: 0.9, x0: 0, x1: 1, xref: 'paper', line: { color: GA.palette.red, dash: 'dash' } },
+              { type: 'line', y0: 1.0, y1: 1.0, x0: 0, x1: 1, xref: 'paper', line: { color: GA.palette.green, dash: 'dot' } }
             ],
             barmode: 'group'
-          });
+          }));
         }
 
         if (window.Plotly) {

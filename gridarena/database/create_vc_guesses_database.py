@@ -1,18 +1,20 @@
 """Creates the sql database tables for the user voltage control guesses"""
 
+from gridarena.database.rename_guess_column import rename_user_id_to_guess_id
+
 
 def create_vc_guesses_database(cursor):
     cursor.execute(
         """
         CREATE TABLE IF NOT EXISTS "VCUserGuesses" (
-            user_id TEXT NOT NULL,
+            guess_id TEXT NOT NULL,
             grid_id TEXT NOT NULL,
             anonymised_key TEXT NOT NULL,
             guessed_voltages TEXT NOT NULL,
             guessed_loads TEXT NOT NULL,
             timestamp TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT vcuserguesses_pk
-                PRIMARY KEY (user_id, grid_id, anonymised_key),
+                PRIMARY KEY (guess_id, grid_id, anonymised_key),
             CONSTRAINT vcuserguesses_grid_fk
                 FOREIGN KEY (grid_id)
                     REFERENCES grids(grid_id) ON DELETE CASCADE,
@@ -23,4 +25,4 @@ def create_vc_guesses_database(cursor):
         );
         """
     )
-
+    rename_user_id_to_guess_id(cursor, "VCUserGuesses")

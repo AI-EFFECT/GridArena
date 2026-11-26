@@ -23,7 +23,7 @@ import logging
 import os
 import shutil
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Callable, Optional, Tuple
 
 import numpy as np
 import torch
@@ -38,7 +38,7 @@ from gridarena.diffusion.architectures import (
     DeepSetsDiffusionUNet,
     GraphDiffusionUNet,
 )
-from gridarena.diffusion.schemas import DiffusionTrainingConfig
+from gridarena.diffusion.schemas import DiffusionTrainingConfig, effective_warmup_steps
 
 logger = logging.getLogger(__name__)
 
@@ -152,14 +152,22 @@ def build_training_pipeline(p_dataset, config: DiffusionTrainingConfig):
     )
     dataset.set_format(type="torch", columns=["images", "id"])
 
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=config.train_batch_size, shuffle=True)
+    # Seed weight init and batch order so a run can be reproduced.
+    torch.manual_seed(config.seed)
+    np.random.seed(config.seed)
+    dataloader = torch.utils.data.DataLoader(
+        dataset, batch_size=config.train_batch_size, shuffle=True,
+        generator=torch.Generator().manual_seed(config.seed),
+    )
     model = build_model(config)
     noise_scheduler = build_noise_scheduler()
     optimizer = torch.optim.AdamW(model.parameters(), lr=config.learning_rate)
+    total_steps = len(dataloader) * config.num_epochs
+    config.effective_lr_warmup_steps = effective_warmup_steps(config.lr_warmup_steps, total_steps)
     lr_scheduler = get_cosine_schedule_with_warmup(
         optimizer=optimizer,
-        num_warmup_steps=config.lr_warmup_steps,
-        num_training_steps=len(dataloader) * config.num_epochs,
+        num_warmup_steps=config.effective_lr_warmup_steps,
+        num_training_steps=total_steps,
     )
 
     return model, noise_scheduler, optimizer, dataloader, lr_scheduler
@@ -206,11 +214,12 @@ def _to_jsonable(x):
     raise TypeError(f"Cannot serialize {type(x).__name__}")
 
 
-def save_model_weights(model, dest_dir: str) -> None:
+def save_model_weights(model, dest_dir: str, state_dict_only: bool = False) -> None:
     """Persist weights in a format ``load_trained_model`` can read: diffusers
-    native for UNet2DModel, a plain state dict otherwise."""
+    native for UNet2DModel, a plain state dict otherwise (and always for
+    Opacus-fixed DP models, whose layers no longer match the diffusers config)."""
     os.makedirs(dest_dir, exist_ok=True)
-    if isinstance(model, UNet2DModel):
+    if isinstance(model, UNet2DModel) and not state_dict_only:
         model.save_pretrained(dest_dir)
     else:
         torch.save(model.state_dict(), os.path.join(str(dest_dir), "pytorch_model.bin"))
@@ -257,10 +266,14 @@ def load_trained_model(model_dir: str, device: str = "cpu"):
         num_channels=meta.get("num_channels", 1),
     )
 
-    if config.architecture == "unet2d":
+    if config.architecture == "unet2d" and not meta.get("opacus_fixed"):
         model = UNet2DModel.from_pretrained(str(model_path))
     else:
         model = build_model(config)
+        if meta.get("opacus_fixed"):
+            # DP-trained weights were saved from the Opacus-fixed module.
+            from opacus.validators import ModuleValidator
+            model = ModuleValidator.fix(model)
         state_dict = torch.load(model_path / "pytorch_model.bin", map_location="cpu")
         model.load_state_dict(state_dict)
 
@@ -275,14 +288,20 @@ def train_diffusion_model(
     config: DiffusionTrainingConfig,
     output_dir: str,
     save_artifacts: bool = True,
+    should_stop: Optional[Callable[[], bool]] = None,
 ) -> Tuple[object, dict]:
     """Train the DDPM model on daily power snapshots and (optionally) save
     artifacts to ``output_dir``. Returns (trained_model, metrics).
 
     ``save_artifacts=False`` skips writing the model weights / zip — used by the
     privacy audit, whose model is trained with canaries injected and must never
-    be shipped."""
+    be shipped.
+
+    ``should_stop`` is polled once per batch; when it returns True training is
+    abandoned with ``TrainingCancelled`` and nothing is saved."""
     from accelerate import Accelerator
+
+    from gridarena.run_cancellation import TrainingCancelled
 
     model, noise_scheduler, optimizer, dataloader, lr_scheduler = build_training_pipeline(p_dataset, config)
 
@@ -334,12 +353,19 @@ def train_diffusion_model(
         progress.set_description(f"Epoch {epoch}")
 
         for batch in dataloader:
+            if should_stop is not None and should_stop():
+                progress.close()
+                accelerator.end_training()
+                raise TrainingCancelled("Training cancelled by user")
+
             clean_images = batch["images"]
             if dp_enabled:
                 clean_images = clean_images.to(device)
 
-            noise = torch.randn_like(clean_images)
             bs = clean_images.shape[0]
+            if bs == 0:  # Opacus' Poisson sampling can draw an empty batch
+                continue
+            noise = torch.randn_like(clean_images)
 
             timesteps = torch.randint(
                 0, noise_scheduler.config.num_train_timesteps, (bs,),
@@ -352,6 +378,9 @@ def train_diffusion_model(
                 loss = F.mse_loss(noise_pred, noise)
                 loss.backward()
                 optimizer.step()
+                # Without this the LR stays at the scheduler's step-0 value,
+                # which is 0 during warmup: the model would never learn.
+                lr_scheduler.step()
                 optimizer.zero_grad()
             else:
                 with accelerator.accumulate(model):
@@ -395,10 +424,13 @@ def train_diffusion_model(
     if save_artifacts and accelerator.is_main_process:
         model_dir = Path(output_dir) / "model"
         model_dir.mkdir(parents=True, exist_ok=True)
-        save_model_weights(trained_model, str(model_dir))
+        save_model_weights(trained_model, str(model_dir), state_dict_only=dp_enabled)
+        # Opacus' ModuleValidator.fix may swap layers (e.g. MultiheadAttention ->
+        # DPMultiheadAttention), changing the weight names; record it so the
+        # loader rebuilds the same structure.
         write_model_metadata(
             model_dir, config,
-            extra={"differential_privacy": dp_metrics} if dp_metrics else None,
+            extra={"differential_privacy": dp_metrics, "opacus_fixed": True} if dp_enabled else None,
         )
         shutil.make_archive(str(Path(output_dir) / "diffusion_model"), "zip",
                             root_dir=output_dir, base_dir="model")
@@ -411,6 +443,7 @@ def train_diffusion_model(
         "final_loss": loss_history[-1] if loss_history else None,
         "loss_history": loss_history,
         "global_steps": global_step,
+        "lr_warmup_steps_effective": config.effective_lr_warmup_steps,
         **dp_metrics,
     }
 

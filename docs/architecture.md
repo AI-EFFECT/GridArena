@@ -14,7 +14,7 @@ gridarena/
 ├── schemas/            # Pydantic request/response models
 ├── database/           # Connection pooling + per-domain table/CRUD helpers
 ├── benchmarks/         # Data-preparation + scoring logic for the 4 benchmarks
-├── powerflow/           # Backward/forward-sweep power flow solver
+├── powerflow/           # Power flow solvers: single-phase sweep, three-phase four-wire LV runs
 ├── digital_twin/         # Digital twin runner, broker, field mapping
 ├── diffusion/             # Diffusion-model training pipeline
 ├── pf_datagen/             # Bulk power-flow scenario generation pipeline
@@ -30,10 +30,29 @@ gridarena/
    each mounted under its own path prefix and OpenAPI tag (see
    [API Reference](api/index.md) for the full list).
 2. An `asynccontextmanager` `lifespan` hook runs once at process startup:
-   it ensures the benchmark-related tables exist (`_ensure_benchmark_tables`),
-   initializes the RAG index for chat, and starts the RL/diffusion/PF-datagen
-   background job registries. On shutdown it stops the digital twin runners,
-   the job registries, and closes the database connection pool.
+   it starts the database preparation (`gridarena/startup.py`), initializes
+   the RAG index for chat, and starts the RL/diffusion/PF-datagen background
+   job registries. On shutdown it stops the digital twin runners, the job
+   registries, and closes the database connection pool.
+   - **Database preparation** creates or migrates every table the app needs
+     (grid and benchmark tables, MV, PF data generation, historical tables
+     with their stored record counts), once, in a background thread. It runs
+     again when the database is changed from the Setup / Settings pages.
+     Request handlers don't create tables: `ALTER TABLE … ADD COLUMN IF NOT
+     EXISTS` takes an exclusive lock even when nothing changes, which made
+     pages wait on unrelated transactions.
+   - **Until it finishes**, the `require_database` middleware answers page
+     requests with a loading page (`templates/startup.html`: progress bar
+     and steps, polling `GET /startup/status`) and API requests with `503`
+     plus `Retry-After`. If it fails, the page shows the error and a Retry
+     button (`POST /startup/retry`). It normally takes well under a second;
+     the one-time fill of the historical record counts takes minutes on a
+     large database, and the loading page shows a time estimate for it.
+   - **Handlers that block** (synchronous database calls) are plain `def`,
+     which FastAPI runs in a worker thread pool, so one slow query can't
+     freeze the server. Async handlers (uploads) move their database work
+     to a worker thread with `run_in_threadpool`. This applies to the MV
+     grid, historical and PF data-generation routers so far.
 3. Each request handler gets its own connection via
    `gridarena.database.get_db_connection()`, does its work, and returns the
    connection with `conn.close()` (which — see below — doesn't actually close
@@ -98,6 +117,16 @@ all four to apply a platform-controlled, seeded corruption profile
 (`clean`/`easy`/`medium`/`hard`) to measurement values before they're handed
 to a benchmark participant — see [API Reference › Overview](api/index.md#difficulty-and-noise-profiles)
 for the exact profile values.
+
+Participants are evaluated on code, not on uploaded results: each benchmark's
+`evaluation.py` builds the hidden test inputs (keeping the ground truth
+server-side) and scores the outputs, and its `submission_template.py` is the
+blank script participants fill in. `benchmarks/submissions/` runs an uploaded
+script on those inputs: it validates and unpacks the upload, queues the run
+on a thread pool, executes `harness.py` in a sandbox (a stripped-down child
+process, or a network-less Docker container) and keeps each run's record,
+log and code under `benchmarks/submissions/runs/`. See
+[API Reference › Code submissions](api/index.md#code-submissions).
 
 ## LLM Chat
 

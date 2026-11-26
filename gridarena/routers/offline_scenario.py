@@ -66,7 +66,7 @@ async def scenario_list_page(request: Request):
     finally:
         conn.close()
 
-    return templates.TemplateResponse("digital_twin/scenarios.html", {
+    return templates.TemplateResponse(request, "digital_twin/scenarios.html", {
         "request": request,
         "title": "Offline Scenarios",
         "active": "digital_twin_scenarios",
@@ -113,7 +113,7 @@ async def scenario_detail_page(request: Request, scenario_id: str):
     finally:
         conn2.close()
 
-    return templates.TemplateResponse("digital_twin/scenario_detail.html", {
+    return templates.TemplateResponse(request, "digital_twin/scenario_detail.html", {
         "request": request,
         "title": f"Scenario: {sc['name'] or scenario_id}",
         "active": "digital_twin_scenarios",

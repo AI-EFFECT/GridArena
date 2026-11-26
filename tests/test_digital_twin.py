@@ -1,3 +1,4 @@
+import importlib
 import json
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -546,62 +547,97 @@ async def test_start_already_running(mock_db, mock_tables, mock_get, mock_runner
 # ═══════════════════════════════════════════════════════════════
 
 
-@patch("gridarena.digital_twin.comparison.full_pf")
-@patch("gridarena.digital_twin.comparison.gd.get_grid_admitances", return_value=[0.1 + 0.01j])
-@patch("gridarena.digital_twin.comparison.gd.get_grid_connections", return_value=([("PT", "N1")], [{"len": 1}]))
-@patch("gridarena.digital_twin.comparison.gd.get_nodes_from_grid", return_value={"PT": 0, "N1": 1})
-@patch("gridarena.digital_twin.comparison.db.get_db_connection")
-def test_run_comparison_converged(mock_db, mock_nodes, mock_conn, mock_adm, mock_pf):
+# Imported by module path: the name gridarena.digital_twin is shadowed by the router of the
+# same name (gridarena/__init__.py star-imports the routers), so patch targets given as
+# "gridarena.digital_twin.comparison...." strings resolve to the wrong module.
+comparison = importlib.import_module("gridarena.digital_twin.comparison")
+
+
+def _radial(connections, z_ohm=0.1 + 0.05j, n_nodes=None):
+    """A real RadialGrid of identical cables, for the comparison tests."""
     import numpy as np
-    from gridarena.digital_twin.comparison import run_comparison
+    from gridarena.powerflow import three_phase as tp
+    n = n_nodes or (max(max(c) for c in connections) + 1)
+    z = np.full((len(connections), 3), z_ohm, dtype=complex)
+    return tp.build_radial_grid(n, connections, z, neutral_ratio=0.0)
 
-    conn = MagicMock()
-    cursor = MagicMock()
-    mock_db.return_value = (conn, cursor)
-    mock_pf.return_value = np.array([230 + 0j, 228.5 - 1.2j])
 
-    batch = StreamedMeasurementBatch(
+def _batch(*measurements):
+    return StreamedMeasurementBatch(
         grid_id="g1",
         timestamp="2025-01-01T00:00:00",
         measurements=[
-            {"node_id": "PT", "phase": "R", "datetime": "2025-01-01T00:00:00",
-             "power_active": 0, "power_reactive": 0, "voltage_magnitude": 230},
-            {"node_id": "N1", "phase": "R", "datetime": "2025-01-01T00:00:00",
-             "power_active": 10, "power_reactive": 5, "voltage_magnitude": 229},
+            {"node_id": node, "phase": "R", "datetime": "2025-01-01T00:00:00",
+             "power_active": p, "power_reactive": q, "voltage_magnitude": v}
+            for node, p, q, v in measurements
         ],
     )
 
-    metrics = run_comparison(batch, phase="R")
+
+@patch.object(comparison.lv_runs, "load_radial_grid")
+@patch.object(comparison.db, "get_db_connection", return_value=(MagicMock(), MagicMock()))
+def test_run_comparison_connections_stored_towards_pt(mock_db, mock_load):
+    """Regression: grids whose cables are stored pointing into PT (e.g. N1 -> PT)
+    solved with the voltage drop on PT and none along the feeder."""
+    run_comparison = comparison.run_comparison
+
+    # PT <- N1 <- N2, both connections stored towards the substation.
+    mock_load.return_value = (["PT", "N1", "N2"], _radial([(1, 0), (2, 1)]))
+    metrics = run_comparison(_batch(("N2", 2000.0, 0.0, 0.0)), phase="R")
+
+    assert metrics["convergence_status"] == "converged"
+    v = {node: d["simulated_voltage"] for node, d in metrics["details"].items()}
+    assert v["PT"] == pytest.approx(230.0)
+    assert 230.0 > v["N1"] > v["N2"]
+    assert metrics["missing_measurements"] == 1          # N1 has no feed; PT is the reference
+
+
+@patch.object(comparison.lv_runs, "load_radial_grid")
+@patch.object(comparison.db, "get_db_connection", return_value=(MagicMock(), MagicMock()))
+def test_run_comparison_converged(mock_db, mock_load):
+    run_comparison = comparison.run_comparison
+
+    mock_load.return_value = (["PT", "N1"], _radial([(0, 1)]))
+    metrics = run_comparison(_batch(("PT", 0, 0, 231.0), ("N1", 10, 5, 229.0)), phase="R")
+
     assert metrics["convergence_status"] == "converged"
     assert metrics["measurements_count"] == 2
-    assert metrics["voltage_mae"] is not None
+    # PT's measured voltage is the reference (left out of the errors); N1 is compared with its 229 V.
+    assert metrics["details"]["PT"]["simulated_voltage"] == pytest.approx(231.0)
+    assert metrics["voltage_mae"] == pytest.approx(abs(metrics["details"]["N1"]["simulated_voltage"] - 229.0), abs=1e-3)
     assert metrics["execution_time_ms"] is not None
-    assert "PT" not in metrics.get("details", {}) or True  # PT may or may not be in details
 
 
-@patch("gridarena.digital_twin.comparison.full_pf", side_effect=Exception("divergence"))
-@patch("gridarena.digital_twin.comparison.gd.get_grid_admitances", return_value=[0.1j])
-@patch("gridarena.digital_twin.comparison.gd.get_grid_connections", return_value=([], []))
-@patch("gridarena.digital_twin.comparison.gd.get_nodes_from_grid", return_value={"PT": 0})
-@patch("gridarena.digital_twin.comparison.db.get_db_connection")
-def test_run_comparison_failed(mock_db, mock_nodes, mock_conn, mock_adm, mock_pf):
-    from gridarena.digital_twin.comparison import run_comparison
+@patch.object(comparison.lv_runs, "load_radial_grid")
+@patch.object(comparison.db, "get_db_connection", return_value=(MagicMock(), MagicMock()))
+def test_run_comparison_uses_the_configured_phase(mock_db, mock_load):
+    import numpy as np
+    run_comparison = comparison.run_comparison
+    from gridarena.powerflow import three_phase as tp
 
-    conn = MagicMock()
-    cursor = MagicMock()
-    mock_db.return_value = (conn, cursor)
-
+    # Phase S has 10x the impedance of R on the same cable.
+    z = np.array([[0.1 + 0.05j, 1.0 + 0.5j, 0.1 + 0.05j]])
+    mock_load.return_value = (["PT", "N1"], tp.build_radial_grid(2, [(0, 1)], z, neutral_ratio=0.0))
     batch = StreamedMeasurementBatch(
-        grid_id="g1",
-        timestamp="2025-01-01T00:00:00",
-        measurements=[
-            {"node_id": "PT", "phase": "R", "datetime": "2025-01-01T00:00:00",
-             "power_active": 0, "power_reactive": 0, "voltage_magnitude": 230},
-        ],
+        grid_id="g1", timestamp="2025-01-01T00:00:00",
+        measurements=[{"node_id": "N1", "phase": ph, "datetime": "2025-01-01T00:00:00",
+                       "power_active": 2000.0, "power_reactive": 0.0, "voltage_magnitude": 0.0} for ph in ("R", "S")],
     )
+    drop_r = 230.0 - run_comparison(batch, phase="R")["details"]["N1"]["simulated_voltage"]
+    drop_s = 230.0 - run_comparison(batch, phase="S")["details"]["N1"]["simulated_voltage"]
+    assert drop_s == pytest.approx(10 * drop_r, rel=0.1)   # not exactly linear: more drop, more current
 
-    metrics = run_comparison(batch, phase="R")
+
+@patch.object(comparison.lv_runs, "load_radial_grid")
+@patch.object(comparison.db, "get_db_connection", return_value=(MagicMock(), MagicMock()))
+def test_run_comparison_failed(mock_db, mock_load):
+    run_comparison = comparison.run_comparison
+    from gridarena.powerflow.lv_runs import PowerFlowInputError
+
+    mock_load.side_effect = PowerFlowInputError("Grid 'g1' has no substation node 'PT' to use as reference.")
+    metrics = run_comparison(_batch(("PT", 0, 0, 230)), phase="R")
     assert metrics["convergence_status"] == "failed"
+    assert "PT" in metrics["details"]["error"]
 
 
 # ═══════════════════════════════════════════════════════════════

@@ -243,7 +243,7 @@ Each per-node correction has:
 | `node_id` | string | yes | The node to correct. |
 | `phase` | `"R"`, `"S"`, `"T"`, or null | no | The phase. Must match the phase in the original measurement for the correction to be scored. |
 | `corrected_voltage` | float | yes | The target voltage magnitude (V) after correction. |
-| `adjusted_power_active` | float | no | The adjusted active power (kW). If omitted, original power is assumed unchanged. |
+| `adjusted_power_active` | float | no | The adjusted active power (W). If omitted, original power is assumed unchanged. |
 | `adjusted_power_reactive` | float | no | The adjusted reactive power (kVAR). If omitted, original is assumed unchanged. |
 
 ### Validation

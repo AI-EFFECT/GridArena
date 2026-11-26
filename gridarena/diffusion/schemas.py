@@ -1,7 +1,17 @@
 from dataclasses import dataclass
 from typing import List, Literal, Optional, Tuple, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+
+# Warmup never takes more than this share of the run's optimiser steps.
+MAX_WARMUP_FRACTION = 0.1
+
+
+def effective_warmup_steps(requested: int, total_steps: int) -> int:
+    """Cap the LR warmup so short runs still reach the configured learning rate.
+    A fixed 500-step warmup on a run of, say, 75 steps never gets past 15% of it."""
+    return max(0, min(int(requested), int(total_steps * MAX_WARMUP_FRACTION)))
 
 
 # Selectable diffusion backbones. The three custom architectures never
@@ -37,14 +47,17 @@ class DiffusionTrainingConfig:
     dp_noise_multiplier: float = 1.0
     dp_target_delta: float = 1e-5
 
+    # Set by build_training_pipeline: the warmup actually used after capping.
+    effective_lr_warmup_steps: Optional[int] = None
+
 
 class DiffusionTrainRequest(BaseModel):
     grid_ids: List[str] = Field(..., min_length=1, description="Grid IDs to pull power data from")
     phase: Optional[Literal["R", "S", "T"]] = Field(None, description="Phase filter (omit for all)")
     start: Optional[str] = Field(None, description="Start datetime ISO (inclusive)")
     end: Optional[str] = Field(None, description="End datetime ISO (exclusive)")
-    p_min: Optional[float] = Field(None, description="Min power_active filter (kW)")
-    p_max: Optional[float] = Field(None, description="Max power_active filter (kW)")
+    p_min: Optional[float] = Field(None, description="Min power_active (W, as stored). Days with any value below it are excluded.")
+    p_max: Optional[float] = Field(None, description="Max power_active (W, as stored). Days with any value above it are excluded.")
 
     architecture: Architecture = Field(
         default="axial",
@@ -68,6 +81,7 @@ class DiffusionTrainRequest(BaseModel):
         description="'auto' computes the std from the training data, or provide a fixed float value.",
     )
     device: Literal["cpu", "cuda"] = "cpu"
+    seed: int = Field(default=0, ge=0, description="Seed for weight init, noise draws and batching")
 
     # Differential privacy
     dp_enabled: bool = Field(default=False, description="Enable DP-SGD training")
@@ -85,7 +99,7 @@ class DiffusionTrainResponse(BaseModel):
 class DiffusionRunStatus(BaseModel):
     run_id: str
     grid_ids: List[str]
-    status: Literal["queued", "running", "completed", "failed"]
+    status: Literal["queued", "running", "completed", "failed", "cancelled"]
     created_at: str
     completed_at: Optional[str] = None
     num_epochs: int = 0
@@ -95,6 +109,7 @@ class DiffusionRunStatus(BaseModel):
     # Which kind of job this run represents.
     job_type: Literal["train", "privacy_check", "epoch_search"] = "train"
     architecture: Optional[str] = None
+    cancel_requested: bool = False
 
 
 class GenerateSnapshotRequest(BaseModel):
@@ -125,3 +140,11 @@ class DiffusionEpochSearchRequest(DiffusionTrainRequest):
     val_frac: float = Field(default=0.2, gt=0, lt=1, description="Fraction of days held out for validation.")
     buffer_days: int = Field(default=7, ge=0, description="Days discarded between train and validation split.")
     sweep_inference_steps: int = Field(default=100, ge=10, le=2000, description="DDPM steps used for the per-checkpoint scoring passes (fast, relative).")
+
+    @model_validator(mode="after")
+    def _no_dp(self):
+        # The sweep trains without DP-SGD; accepting dp_enabled would silently
+        # ship a non-private model as the run's model.
+        if self.dp_enabled:
+            raise ValueError("Epoch search does not support differential privacy; use a normal training run.")
+        return self
