@@ -2,11 +2,12 @@
 
 This benchmark tests a participant's ability to infer which grid phase (`R`,
 `S`, or `T`) each meter/node is connected to, from historical power and
-voltage measurements. The workflow is: download anonymised per-node
-measurement series via `GET /phase-data`, submit a guessed phase per
-anonymised key via `POST /submit-results`, then check accuracy via
-`GET /score`. `GET /training-phase-data` exposes the same kind of data for
-training grids, with real node IDs and the true `phase` label included.
+voltage measurements. Training data is downloadable, with the true `phase`
+label included (`GET /training-phase-data`). The test data is not: instead
+the participant downloads a submission template (`GET /submission-template`),
+fills in its `predict` function with their method, and uploads it
+(`POST /submissions`). GridArena runs the script on the hidden test grids in a
+sandbox and scores the phases it returns (`GET /submissions/{submission_id}`).
 
 **Base path:** `/phase_identification_benchmark`
 
@@ -65,48 +66,82 @@ meant for training, not for scoring. Noise is applied per the requested
 
 ---
 
-### `GET /phase_identification_benchmark/phase-data`
+### `GET /phase_identification_benchmark/submission-template`
 
-Returns historical measurements for every grid marked for phase-detection
-testing (`GridUsage.phase_detection_test = 1`), with each `(node_id, phase)`
-pair replaced by a persistent anonymised key and the `phase` field removed
-from every record, since it's the hidden label participants must guess — see
-[anonymisation pattern](index.md#anonymisation-pattern). The first time a
-given `(grid_id, node_id, phase)` is seen, a random UUID4 key is generated
-and stored in `AnonymisedMapping`; the same key is returned on every later
-call for that triple.
+Downloads `phase_identification_submission.py`: the blank submission script.
+It documents the contract below, has a random baseline in `predict` so it runs
+as-is, and can be run locally on a training download
+(`python phase_identification_submission.py training_phase_data_clean.json`)
+to score it the same way the test grids are scored.
 
-**Query parameters**
+**The contract.** The script defines `predict(measurements)`. It is called
+once per test grid with every measurement series of that grid:
 
-| Name | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `difficulty` | string | no | `clean` | One of `clean`, `easy`, `medium`, `hard` — see [difficulty/noise profiles](index.md#difficulty-and-noise-profiles). |
-
-**Response** `200`
-
-```json
-{
-  "difficulty": "clean",
-  "profile": {
-    "pq_rel_sigma": 0.0,
-    "v_mag_rel_sigma": 0.0,
-    "v_ang_rel_sigma": 0.0,
-    "outlier_prob": 0.0,
-    "outlier_scale": 0.0
-  },
-  "grids": {
-    "grid001": {
-      "a312d3c8-d978-4a2a-91b6-9dc4b7d2e1b2": [
+```python
+measurements = {
+    "3f9c1a2b7d4e": [                 # random key, one per (node, phase) series
         {
-          "datetime": "2024-01-15T13:00:00",
-          "power_active": 1.243,
-          "power_reactive": 0.081,
-          "voltage_magnitude": 229.7,
-          "voltage_angle": -0.42
-        }
-      ]
-    }
-  }
+            "datetime": "2025-01-01T00:00:00",
+            "power_active": 1.243,    # float, or None if missing
+            "power_reactive": 0.081,
+            "voltage_magnitude": 229.7,
+            "voltage_angle": -0.42,
+        },
+        ...                           # sorted by datetime
+    ],
+    ...
+}
+```
+
+and returns `{series_key: "R" | "S" | "T"}` for every key. The keys are drawn
+at random for every submission and the series are shuffled, so neither carries
+information across submissions. Noise is applied per the submission's
+`difficulty`, seeded per `(grid_id, node_id, phase, difficulty)`, so every
+submission at a given difficulty sees the same values.
+
+**Runtime.** Code at module level runs once, before the first `predict` call
+(load model weights there). The script can import what is installed on the
+server (numpy, pandas, scipy, networkx, torch, ...; see `requirements.txt`)
+and has no network access. The whole run must finish within
+`GRIDARENA_SUBMISSION_TIMEOUT` seconds (default 900).
+
+---
+
+### `POST /phase_identification_benchmark/submissions`
+
+Uploads a script for evaluation (`multipart/form-data`). The upload is checked
+for syntax errors and a top-level `predict` before it is queued; evaluation
+then runs in the background.
+
+**Form fields**
+
+| Name | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `file` | file | yes | — | A `.py` file, or a `.zip` with `submission.py` at its root (or inside a single top-level folder) next to its weights / helper modules. Max 200 MB. |
+| `submission_name` | string | yes | — | Label for this attempt, e.g. `alice_v1`: 1–64 letters, digits, `_`, `-` or `.`. |
+| `difficulty` | string | no | `clean` | Noise level of the test data — one of `clean`, `easy`, `medium`, `hard` (see [difficulty/noise profiles](index.md#difficulty-and-noise-profiles)). |
+
+```bash
+curl -X POST http://localhost:8000/phase_identification_benchmark/submissions \
+     -F file=@phase_identification_submission.py \
+     -F submission_name=alice_v1 -F difficulty=medium
+```
+
+**Response** `202`
+
+```json
+{
+  "submission_id": "3f9c1a2b7d4e",
+  "benchmark": "phase_identification",
+  "submission_name": "alice_v1",
+  "difficulty": "medium",
+  "filename": "phase_identification_submission.py",
+  "status": "queued",
+  "created_at": "2026-10-25T13:31:32.847502+00:00",
+  "started_at": null,
+  "completed_at": null,
+  "score": null,
+  "error": null
 }
 ```
 
@@ -114,86 +149,93 @@ call for that triple.
 
 | Status | Cause |
 |---|---|
-| `500` | No grid is marked `phase_detection_test = 1`, or no measurements exist for the test grids, or another database error (same "no data → 500" behavior as above). |
+| `413` | The upload is larger than 200 MB. |
+| `422` | Not a `.py`/`.zip`; a `.zip` without `submission.py`, with unsafe paths or symbolic links, or larger than 1 GB unpacked; a syntax error; no top-level `predict` (or an `async def` one); or an invalid `submission_name` / `difficulty`. |
 
 ---
 
-### `POST /phase_identification_benchmark/submit-results`
+### `GET /phase_identification_benchmark/submissions/{submission_id}`
 
-Submits guessed phases for anonymised keys returned by `GET /phase-data`.
-Every key must already exist in `AnonymisedMapping` for the given `grid_id`.
-Resubmitting the same `(guess_id, grid_id, anonymised_key)` overwrites the
-previous guess (`ON CONFLICT ... DO UPDATE`), updating its `timestamp`.
+Returns the submission record with its current `status`: `queued`,
+`running`, `completed` or `failed`. Poll it until it is `completed` or
+`failed`.
 
-**Request body**
-
-```json
-{
-  "guess_id": "team-alpha",
-  "grid_id": "grid001",
-  "guesses": {
-    "a312d3c8-d978-4a2a-91b6-9dc4b7d2e1b2": "R"
-  }
-}
-```
-
-| Field | Type | Notes |
-|---|---|---|
-| `guess_id` | string | Caller-supplied identifier for the participant/submission — not an authenticated credential. |
-| `grid_id` | string | Real grid ID. |
-| `guesses` | object (`string` → `"R"｜"S"｜"T"`) | Anonymised key → guessed phase. At most 5000 entries. |
-
-**Response** `200`
+**Response** `200` (completed; other fields as for `POST /submissions`)
 
 ```json
 {
-  "status": "submitted",
-  "accepted": 1
+  "submission_id": "3f9c1a2b7d4e",
+  "status": "completed",
+  "score": {
+    "accuracy": 0.8333,
+    "correct": 10,
+    "total": 12,
+    "grids": 1,
+    "failed_grids": 0,
+    "runtime_seconds": 0.41,
+    "confusion": {
+      "R": {"R": 4, "S": 0, "T": 0, "other": 0},
+      "S": {"R": 1, "S": 3, "T": 0, "other": 0},
+      "T": {"R": 0, "S": 1, "T": 3, "other": 0}
+    },
+    "per_grid": [
+      {
+        "grid_id": "DEMO_LV_TEST",
+        "series": 12,
+        "correct": 10,
+        "accuracy": 0.8333,
+        "missing": 0,
+        "invalid": 0,
+        "unknown_keys": 0,
+        "seconds": 0.41,
+        "error": null
+      }
+    ]
+  },
+  "error": null,
+  "log_tail": "[harness] input 0000: ok in 0.41 s\n"
 }
 ```
+
+- `accuracy` = `correct / total` over every series of every test grid. A key
+  missing from the returned dict (`missing`) or with a value other than
+  `R`/`S`/`T` (`invalid`) counts as wrong; keys that are not in the input
+  (`unknown_keys`) are ignored.
+- When `predict` raises for a grid, that grid's `error` holds the exception
+  and all its series count as wrong; the other grids are still scored.
+- `confusion` counts true phase (rows) against predicted phase; `other` is a
+  missing or invalid prediction.
+- `log_tail` is the last 8000 characters of what the script printed, plus
+  tracebacks.
+
+A submission is `failed` (with `error` set and `score` null) when the script
+cannot be loaded (e.g. an import error), the run exceeds the time limit, or no
+grid is marked `phase_detection_test = 1`.
 
 **Errors**
 
 | Status | Cause |
 |---|---|
-| `422` | No `AnonymisedMapping` rows exist yet for `grid_id` (download `/phase-data` first to generate them). |
-| `422` | One or more submitted keys aren't present in `AnonymisedMapping` for that grid. |
-| `422` | Request body fails schema validation (e.g. more than 5000 guesses, or a guess value other than `R`/`S`/`T`). |
-| `500` | Database error. |
+| `404` | No phase identification submission with that id. |
 
 ---
 
-### `GET /phase_identification_benchmark/score`
+### `GET /phase_identification_benchmark/submissions`
 
-Computes guessing accuracy for a `(guess_id, grid_id)` pair by joining
-`UserGuesses` against `AnonymisedMapping` on the true `phase`, without
-revealing which individual guesses were right or wrong.
+Lists submission records (without logs), newest first.
 
 **Query parameters**
 
 | Name | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `guess_id` | string | yes | — | The participant identifier used when submitting. |
-| `grid_id` | string | yes | — | Grid to score. |
+| `submission_name` | string | no | — | Only submissions with this name. |
 
 **Response** `200`
 
 ```json
-{
-  "guess_id": "team-alpha",
-  "grid_id": "grid001",
-  "accuracy": 0.8571
-}
+{"submissions": [{"submission_id": "3f9c1a2b7d4e", "status": "completed", "score": {"accuracy": 0.8333}}]}
 ```
 
-!!! note
-    `accuracy` is `0.0` when the grid has no `AnonymisedMapping` rows yet
-    (division-by-zero is guarded against), not an error — check
-    `AnonymisedMapping`/`UserGuesses` existence yourself if you need to tell
-    "no data" apart from "0% correct".
+---
 
-**Errors**
-
-| Status | Cause |
-|---|---|
-| `500` | Database error. |
+See [Code submissions](index.md#code-submissions) for how runs are sandboxed and their limits.

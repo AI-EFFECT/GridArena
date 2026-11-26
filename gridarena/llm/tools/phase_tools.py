@@ -20,17 +20,11 @@ PHASE_TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "get_phase_identification_data",
-            "description": "Retrieve anonymised historical measurement data for testing a phase detection algorithm. True phases are hidden.",
+            "name": "get_phase_submission_template",
+            "description": "Get the blank Python submission script for the phase identification benchmark: the predict(measurements) function to fill in, with its input/output format documented.",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "difficulty": {
-                        "type": "string",
-                        "enum": ["clean", "easy", "medium", "hard"],
-                        "description": "Difficulty level of the data corruption profile. Default is clean."
-                    }
-                },
+                "properties": {},
                 "required": []
             }
         }
@@ -38,46 +32,43 @@ PHASE_TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "submit_phase_guesses",
-            "description": "Submit phase identification guesses for anonymised measurement keys in a grid.",
+            "name": "submit_phase_script",
+            "description": "Submit a Python script defining predict(measurements) -> {series_key: 'R'|'S'|'T'}. The server runs it on the hidden test grids and scores it; returns a submission_id to check with get_phase_submission.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "guess_id": {
+                    "submission_name": {
                         "type": "string",
-                        "description": "The user or submission ID"
+                        "description": "Label for this attempt, e.g. 'run_001' (letters, digits, '_', '-', '.')"
                     },
-                    "grid_id": {
+                    "code": {
                         "type": "string",
-                        "description": "The grid ID the guesses are for"
+                        "description": "Full source of the Python script, based on the submission template"
                     },
-                    "guesses": {
-                        "type": "object",
-                        "description": "Dictionary mapping anonymised keys to guessed phases e.g. {'key1': 'R', 'key2': 'S'}"
+                    "difficulty": {
+                        "type": "string",
+                        "enum": ["clean", "easy", "medium", "hard"],
+                        "description": "Noise level of the test data the script is run on. Default is clean."
                     }
                 },
-                "required": ["guess_id", "grid_id", "guesses"]
+                "required": ["submission_name", "code"]
             }
         }
     },
     {
         "type": "function",
         "function": {
-            "name": "get_phase_score",
-            "description": "Get the phase identification accuracy score for a user on a specific grid.",
+            "name": "get_phase_submission",
+            "description": "Get the status (queued, running, completed, failed), accuracy score and log of a phase identification script submission.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "guess_id": {
+                    "submission_id": {
                         "type": "string",
-                        "description": "The user or submission ID"
-                    },
-                    "grid_id": {
-                        "type": "string",
-                        "description": "The grid ID to check the score for"
+                        "description": "The submission_id returned by submit_phase_script"
                     }
                 },
-                "required": ["guess_id", "grid_id"]
+                "required": ["submission_id"]
             }
         }
     }

@@ -50,12 +50,12 @@
 <!-- Controls -->
 <div class="dt-step">
   <div class="dt-step__header">
-    <div class="dt-step__number" style="background:#059669;">&#9654;</div>
+    <div class="dt-step__number dt-step__number--success">&#9654;</div>
     <h4 class="dt-step__title">Simulation</h4>
   </div>
   <div class="dt-actions">
     <button class="btn btn-primary" onclick="runSimulation()">Run Power Flow (all timestamps)</button>
-    <button class="btn" style="color:#dc2626;" onclick="deleteScenario()">Delete Scenario</button>
+    <button class="btn" style="color:var(--color-danger);" onclick="deleteScenario()">Delete Scenario</button>
   </div>
   <p class="muted" id="simMsg" style="margin-top:8px;"></p>
 </div>
@@ -63,29 +63,29 @@
 <!-- Grid snapshot graph -->
 <div class="dt-step">
   <div class="dt-step__header">
-    <div class="dt-step__number" style="background:#7c3aed;">&#x25C9;</div>
+    <div class="dt-step__number dt-step__number--purple">&#x25C9;</div>
     <h4 class="dt-step__title">Grid Topology</h4>
   </div>
   <p class="dt-step__desc">The cloned grid snapshot. Disabled connections are shown as dashed lines.</p>
-  <div id="scenarioGraph" style="background:#fff; border:1px solid #e5e7eb; border-radius:8px; min-height:350px;"></div>
+  <div id="scenarioGraph" style="background:var(--chart-plot-bg); border:1px solid var(--color-border); border-radius:8px; min-height:350px;"></div>
 </div>
 
 <!-- Connection changes -->
 <div class="dt-step">
   <div class="dt-step__header">
-    <div class="dt-step__number" style="background:#f59e0b;">&#x1F527;</div>
+    <div class="dt-step__number dt-step__number--warning">&#x1F527;</div>
     <h4 class="dt-step__title">Connection Changes</h4>
   </div>
   <p class="dt-step__desc">Click two nodes on the graph to <strong>add</strong> a new connection between them. Click an edge to <strong>remove</strong> it. Changes do not affect the original digital twin.</p>
 
   <div style="display:flex; gap:16px; flex-wrap:wrap;">
     <div style="flex:2; min-width:350px;">
-      <div id="connGraph" style="background:#fff; border:1px solid #e5e7eb; border-radius:8px; min-height:380px;"></div>
+      <div id="connGraph" style="background:var(--chart-plot-bg); border:1px solid var(--color-border); border-radius:8px; min-height:380px;"></div>
       <p class="muted" id="connGraphHint" style="font-size:11px; text-align:center; margin-top:6px;">Click a node to start adding a connection. Click an edge to remove it.</p>
     </div>
     <div style="flex:1; min-width:240px;">
-      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:14px;">
-        <h4 style="margin:0 0 8px; font-size:13px; color:#0f172a;">Add Connection</h4>
+      <div style="background:var(--color-surface-sunken); border:1px solid var(--color-border); border-radius:8px; padding:14px;">
+        <h4 style="margin:0 0 8px; font-size:13px; color:var(--color-text);">Add Connection</h4>
         <p class="muted" id="connSelectionStatus" style="font-size:12px;">Select first node on the graph...</p>
         <div id="addConnForm" style="display:none; margin-top:8px;">
           <div class="field">
@@ -106,7 +106,7 @@
           </div>
         </div>
 
-        <h4 style="margin:16px 0 8px; font-size:13px; color:#0f172a;">Applied Changes ({{ (sc.connection_changes or []) | length }})</h4>
+        <h4 style="margin:16px 0 8px; font-size:13px; color:var(--color-text);">Applied Changes ({{ (sc.connection_changes or []) | length }})</h4>
         <div id="changesLog" style="max-height:200px; overflow-y:auto;">
           {% for c in (sc.connection_changes or []) %}
           <div class="dt-event" style="font-size:11px; padding:4px 0;">
@@ -117,7 +117,7 @@
           <p class="muted" style="font-size:11px;">No changes.</p>
           {% endfor %}
         </div>
-        <button class="btn" style="margin-top:8px; font-size:11px; height:26px; color:#dc2626;" onclick="clearAllChanges()">Clear All Changes</button>
+        <button class="btn" style="margin-top:8px; font-size:11px; height:26px; color:var(--color-danger);" onclick="clearAllChanges()">Clear All Changes</button>
       </div>
     </div>
   </div>
@@ -126,14 +126,14 @@
 <!-- Power limits -->
 <div class="dt-step">
   <div class="dt-step__header">
-    <div class="dt-step__number" style="background:#ef4444;">&#x26A1;</div>
+    <div class="dt-step__number dt-step__number--danger">&#x26A1;</div>
     <h4 class="dt-step__title">Power Limits</h4>
   </div>
-  <p class="dt-step__desc">Set maximum active power (kW) per node. Power values exceeding the limit will be clamped during simulation.</p>
+  <p class="dt-step__desc">Set maximum active power (W) per node. Power values exceeding the limit will be clamped during simulation.</p>
 
   <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start;">
     <div style="flex:1; min-width:250px;">
-      <h4 style="font-size:13px; margin:0 0 8px; color:#374151;">Set Limit</h4>
+      <h4 style="font-size:13px; margin:0 0 8px; color:var(--color-text);">Set Limit</h4>
       <div class="field">
         <label style="min-width:100px;">Node</label>
         <select id="plNode" class="input" style="width:140px;">
@@ -143,7 +143,7 @@
         </select>
       </div>
       <div class="field">
-        <label style="min-width:100px;">Max Power (kW)</label>
+        <label style="min-width:100px;">Max Power (W)</label>
         <input id="plLimit" class="input" type="number" value="10" min="0" step="0.1" style="width:100px;">
       </div>
       <div style="display:flex; gap:6px; margin-top:8px;">
@@ -151,20 +151,20 @@
       </div>
     </div>
     <div style="flex:1; min-width:250px;">
-      <h4 style="font-size:13px; margin:0 0 8px; color:#374151;">Active Limits</h4>
+      <h4 style="font-size:13px; margin:0 0 8px; color:var(--color-text);">Active Limits</h4>
       <table class="data-table" id="limitsTable">
         <thead>
-          <tr><th>Node</th><th>Max Power (kW)</th><th></th></tr>
+          <tr><th>Node</th><th>Max Power (W)</th><th></th></tr>
         </thead>
         <tbody>
           {% for nid, limit in (sc.power_limits or {}).items() %}
           <tr>
             <td><strong>{{ nid }}</strong></td>
             <td>{{ limit }}</td>
-            <td><button class="btn" style="height:22px; padding:0 6px; font-size:10px; color:#dc2626;" onclick="removePowerLimit('{{ nid }}')">Remove</button></td>
+            <td><button class="btn" style="height:22px; padding:0 6px; font-size:10px; color:var(--color-danger);" onclick="removePowerLimit('{{ nid }}')">Remove</button></td>
           </tr>
           {% else %}
-          <tr id="noLimitsRow"><td colspan="3" style="text-align:center; padding:12px; color:#6b7280; font-size:12px;">No limits set.</td></tr>
+          <tr id="noLimitsRow"><td colspan="3" style="text-align:center; padding:12px; color:var(--color-text-muted); font-size:12px;">No limits set.</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -175,7 +175,7 @@
 <!-- Time-series charts -->
 <div class="dt-step">
   <div class="dt-step__header">
-    <div class="dt-step__number" style="background:#2563eb;">&#x1F4C8;</div>
+    <div class="dt-step__number">&#x1F4C8;</div>
     <h4 class="dt-step__title">Time Series</h4>
   </div>
   <p class="dt-step__desc">
@@ -187,19 +187,19 @@
       {% endfor %}
     </select>
   </p>
-  <h4 style="font-size:13px; margin:12px 0 6px; color:#374151;">Voltage</h4>
-  <div id="voltageTimeChart" style="background:#fff; border:1px solid #e5e7eb; border-radius:8px; min-height:280px;"></div>
-  <h4 style="font-size:13px; margin:16px 0 6px; color:#374151;">Active Power</h4>
-  <div id="powerTimeChart" style="background:#fff; border:1px solid #e5e7eb; border-radius:8px; min-height:280px;"></div>
+  <h4 style="font-size:13px; margin:12px 0 6px; color:var(--color-text);">Voltage</h4>
+  <div id="voltageTimeChart" style="background:var(--chart-plot-bg); border:1px solid var(--color-border); border-radius:8px; min-height:280px;"></div>
+  <h4 style="font-size:13px; margin:16px 0 6px; color:var(--color-text);">Active Power</h4>
+  <div id="powerTimeChart" style="background:var(--chart-plot-bg); border:1px solid var(--color-border); border-radius:8px; min-height:280px;"></div>
 </div>
 
 <!-- Violations -->
 <div class="dt-step">
   <div class="dt-step__header">
-    <div class="dt-step__number" style="background:#dc2626;">&#x26A0;</div>
+    <div class="dt-step__number dt-step__number--danger">&#x26A0;</div>
     <h4 class="dt-step__title">Voltage Violations</h4>
   </div>
-  <div id="violationsLoading" style="font-size:12px; color:#6b7280;">Loading violations...</div>
+  <div id="violationsLoading" style="font-size:12px; color:var(--color-text-muted);">Loading violations...</div>
   <table class="data-table" id="violationsTable" style="display:none;">
     <thead>
       <tr><th>Timestamp</th><th>Node</th><th>Voltage (V)</th><th>Deviation (%)</th><th>Type</th></tr>
@@ -222,10 +222,10 @@
         <td>{{ r.timestamp[:19] }}</td>
         <td><span class="status-badge status-badge--{{ 'converged' if r.convergence_status == 'converged' else 'failed' }}">{{ r.convergence_status }}</span></td>
         <td>{{ '%.1f' | format(r.execution_time_ms) if r.execution_time_ms is not none else '—' }}</td>
-        <td style="font-size:11px; color:#dc2626;">{{ r.error or '' }}</td>
+        <td style="font-size:11px; color:var(--color-danger);">{{ r.error or '' }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="4" style="text-align:center; padding:24px; color:#6b7280;">No results yet. Run the simulation first.</td></tr>
+      <tr><td colspan="4" style="text-align:center; padding:24px; color:var(--color-text-muted);">No results yet. Run the simulation first.</td></tr>
       {% endfor %}
     </tbody>
   </table>

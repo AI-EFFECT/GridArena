@@ -1,22 +1,17 @@
 /* ── Benchmark dashboard shared styles ── */
 
-.bench-header h2 {
-  margin: 0 0 4px;
-  font-size: 22px;
-  color: var(--color-text);
-}
-
 .bench-header p {
   margin: 0;
-  font-size: 13px;
+  font-size: 0.88rem;
+  line-height: 1.5;
   color: var(--color-text-muted);
 }
 
-/* ── Summary row ── */
+/* ── Summary row (tef stat-item) ── */
 
 .bench-summary {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 12px;
   margin-bottom: 20px;
 }
@@ -24,60 +19,57 @@
 .bench-summary-card {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
-  padding: 14px 16px;
-  text-align: center;
+  border-radius: var(--r);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
 }
 
 .bench-summary-card__value {
-  font-size: 20px;
+  font-family: var(--font-mono);
+  font-size: 1.2rem;
   font-weight: 700;
+  line-height: 1.1;
   color: var(--color-accent);
+  overflow-wrap: anywhere;
 }
 
 .bench-summary-card__label {
-  font-size: 10px;
-  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 1.2px;
   text-transform: uppercase;
-  letter-spacing: 0.4px;
-  margin-top: 2px;
+  color: var(--color-text-faint);
 }
 
 /* ── Setup card ── */
 
 .bench-setup {
-  background: var(--color-accent-soft);
-  border: 1px solid rgba(79, 70, 229, 0.25);
-  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--accent) 5%, var(--color-surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  border-left: 3px solid var(--color-accent);
+  border-radius: var(--r);
   padding: 16px 20px;
   margin-bottom: 20px;
 }
 
 .bench-setup h3 {
   margin: 0 0 10px;
-  font-size: 15px;
-  color: var(--color-text);
+  font-size: 0.95rem;
 }
 
-.bench-setup .field {
-  margin-top: 8px;
-}
-
-.bench-setup .field label {
-  min-width: 110px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-accent);
-}
+.bench-setup .field { margin-top: 8px; }
+.bench-setup .field label { min-width: 120px; color: var(--color-accent); }
 
 /* ── Step cards ── */
 
 .bench-step {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
+  border-radius: var(--r);
   padding: 20px;
   margin-bottom: 16px;
 }
@@ -85,74 +77,45 @@
 .bench-step__header {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   margin-bottom: 10px;
 }
 
 .bench-step__number {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--color-accent);
-  color: #ffffff;
-  font-size: 13px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
   font-weight: 700;
   flex-shrink: 0;
 }
 
 .bench-step__title {
-  font-size: 15px;
+  font-size: 0.95rem;
   font-weight: 600;
-  color: var(--color-text);
   margin: 0;
 }
 
 .bench-step__desc {
-  font-size: 12px;
+  font-size: 0.82rem;
+  line-height: 1.5;
   color: var(--color-text-muted);
   margin: 0 0 12px;
 }
 
-.bench-step .btn-secondary {
-  height: 34px;
-  padding: 0 14px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-}
+.bench-step .drop { padding: 16px; }
 
-.bench-step .btn-secondary:hover {
-  background: var(--color-surface-sunken);
-  border-color: var(--color-text-muted);
-}
-
-/* ── Drop zone inside step (compact) ── */
-
-.bench-step .drop {
-  padding: 14px;
-  min-height: auto;
-}
-
-.bench-step .drop .icon {
-  font-size: 16px;
-}
-
-.bench-step .drop .drop__title {
-  font-size: 12px;
-}
-
-/* ── Result/feedback card ── */
+/* ── Result / feedback card (tef status-banner) ── */
 
 .bench-result {
-  border: 1px solid var(--color-success);
-  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in srgb, var(--color-success) 25%, transparent);
+  border-radius: var(--r);
   padding: 14px 18px;
   background: var(--color-success-soft);
   margin-top: 14px;
@@ -160,73 +123,49 @@
 }
 
 .bench-result--error {
-  border-color: var(--color-danger);
+  border-color: color-mix(in srgb, var(--color-danger) 25%, transparent);
   background: var(--color-danger-soft);
 }
 
 .bench-result h4 {
   margin: 0 0 6px;
-  font-size: 14px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 1px;
+  text-transform: uppercase;
   color: var(--color-success);
 }
 
-.bench-result--error h4 {
-  color: var(--color-danger);
-}
+.bench-result--error h4 { color: var(--color-danger); }
 
-.bench-result table {
-  font-size: 13px;
-  margin-top: 8px;
-}
-
-.bench-result table th {
-  text-align: left;
-  padding-right: 16px;
-  color: var(--color-text);
-  font-weight: 600;
-}
-
-.bench-result table td {
-  color: var(--color-text);
-}
+.bench-result table { margin-top: 8px; }
 
 /* ── JSON format hint ── */
 
 .bench-hint {
   margin-top: 16px;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--r);
   overflow: hidden;
 }
 
 .bench-hint summary {
   padding: 10px 14px;
-  font-size: 13px;
-  font-weight: 600;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
   color: var(--color-accent);
   cursor: pointer;
   background: var(--color-surface-sunken);
 }
 
+.bench-hint[open] summary { border-bottom: 1px solid var(--color-border); }
+
 .bench-hint__body {
   padding: 12px 14px;
-  font-size: 12px;
-  color: var(--color-text);
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
   line-height: 1.6;
-}
-
-.bench-hint__body code {
-  background: var(--color-surface-sunken);
-  padding: 1px 5px;
-  border-radius: 3px;
-  font-size: 11px;
-}
-
-.bench-hint__body pre {
-  background: var(--color-surface-sunken);
-  padding: 10px 12px;
-  border-radius: 6px;
-  overflow-x: auto;
-  font-size: 11px;
-  line-height: 1.5;
 }

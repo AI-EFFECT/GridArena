@@ -48,3 +48,21 @@ gridarena/rl/runs/*
 # Docker-related files themselves
 Dockerfile
 .dockerignore
+
+# Large local data sets and runtime state (not needed in the image)
+feeder_measurement/
+data/
+gridarena/data/llm/
+gridarena/llm/rag/chroma_db/
+gridarena/pf_datagen/runs/*
+gridarena/benchmarks/submissions/runs/*
+
+# Built docs and local working files
+site/
+*.docx
+audit.md
+improvement_plan.md
+llm_fix_plan.md
+CHANGELOG.md
+INSTRUCOES-VIDEO-SERVICO.md
+video_progress.md

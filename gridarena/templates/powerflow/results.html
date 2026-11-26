@@ -3,18 +3,43 @@
 {% block content %}
 <div class="panel">
   <div class="section-title">Power Flow</div>
-  <p class="muted">Viewing power flow results for grid <strong>{{ grid_id }}</strong>.</p>
+  <p class="muted">Results for grid <strong>{{ grid_id }}</strong>. <strong>Computed</strong> voltages come from the power flow, solved from the measured power of each node and the measured voltage at the substation ({{ reference_node }}); <strong>measured</strong> voltages are the meter readings. Comparing the two shows how well the grid model reproduces the meters.</p>
   <p><a href="/powerflow/ui">&larr; Back to Power Flow</a></p>
 </div>
 
 <section class="panel">
-  <h3>Phase Selection</h3>
-  <form method="get" id="phaseForm" style="margin-bottom:16px;">
-    <label for="phase">Select Phase:</label>
-    <select class="input" id="phase" name="phase" onchange="this.form.submit()">
-      <option value="R" {{ 'selected' if phase == 'R' else '' }}>R</option>
-      <option value="S" {{ 'selected' if phase == 'S' else '' }}>S</option>
-      <option value="T" {{ 'selected' if phase == 'T' else '' }}>T</option>
+  <h3>Run</h3>
+  {% if run %}
+  <table class="data-table">
+    <tr><th>Model</th><td>{{ 'Unbalanced (three-phase, four-wire)' if run.mode == 'unbalanced' else 'Balanced' }}</td></tr>
+    {% if run.mode == 'unbalanced' %}
+    <tr><th>Neutral Z ratio</th><td>{{ run.neutral_impedance_ratio }}{{ ' (ideal neutral: phases independent)' if run.neutral_impedance_ratio == 0 else '' }}</td></tr>
+    {% endif %}
+    <tr><th>Time range</th><td>{{ run.start_time or 'first measurement' }} &ndash; {{ run.end_time or 'last measurement' }}</td></tr>
+    <tr><th>Timestamps solved</th><td>{{ run.timestamps }}{% if run.not_converged %} &mdash; <strong style="color:var(--color-danger);">{{ run.not_converged }} did not converge</strong>{% endif %}</td></tr>
+    {% if run.skipped_timestamps %}
+    <tr><th>Skipped</th><td>{{ run.skipped_timestamps }} timestamps without a substation voltage</td></tr>
+    {% endif %}
+    {% if run.unreachable_nodes %}
+    <tr><th>Not connected to {{ reference_node }}</th><td>{{ run.unreachable_nodes | join(', ') }} (no voltage computed)</td></tr>
+    {% endif %}
+    <tr><th>Computed on</th><td>{{ run.created_at[:19] | replace('T', ' ') }}</td></tr>
+  </table>
+  {% else %}
+  <p class="muted">{{ 'No power flow has been run for this grid yet.' if empty else 'These results were computed before run settings were recorded; run the power flow again to see them.' }}</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h3>Phase</h3>
+  <form method="get" id="phaseForm">
+    <select class="input" id="phase" name="phase" onchange="this.form.submit()" style="width:260px;">
+      <option value="R" {{ 'selected' if phase == 'R' else '' }}>R (phase-to-neutral)</option>
+      <option value="S" {{ 'selected' if phase == 'S' else '' }}>S (phase-to-neutral)</option>
+      <option value="T" {{ 'selected' if phase == 'T' else '' }}>T (phase-to-neutral)</option>
+      {% if phase == 'N' or (run and run.mode == 'unbalanced' and run.neutral_impedance_ratio) %}
+      <option value="N" {{ 'selected' if phase == 'N' else '' }}>N (neutral-to-ground, computed only)</option>
+      {% endif %}
     </select>
   </form>
 </section>
@@ -22,7 +47,7 @@
 {% if empty %}
 <section class="panel">
   <h3>No Power Flow Results Found</h3>
-  <p class="muted">No data was found for <strong>Grid {{ grid_id }}</strong> in <strong>Phase {{ phase }}</strong>.</p>
+  <p class="muted">No results were found for <strong>Grid {{ grid_id }}</strong>, phase <strong>{{ phase }}</strong>.</p>
   <div style="margin-top: 16px;">
     <a href="/powerflow/ui" class="btn btn-primary">Back to Grids</a>
   </div>
@@ -30,17 +55,79 @@
 {% else %}
 <section class="panel">
   <h3>Voltage Magnitude</h3>
-  <div id="magChart" style="width:100%;height:400px;"></div>
+  <p class="muted">{{ 'Neutral potential along the feeder, caused by the return current of unbalanced loads.' if phase == 'N' else 'Solid lines: computed. Dotted lines with markers: measured (only for nodes with a meter on this phase). Click a node in the legend to hide both of its lines.' }}</p>
+  <div id="magChart" style="width:100%;height:420px;"></div>
 </section>
 
 <section class="panel">
   <h3>Voltage Angle</h3>
-  <div id="angChart" style="width:100%;height:400px;"></div>
+  <div id="angChart" style="width:100%;height:420px;"></div>
 </section>
+
+{% if phase != 'N' %}
+<section class="panel">
+  <h3>Computed vs Measured</h3>
+  {% if errors %}
+  <p class="muted">Error of the computed voltages against the measured ones (computed &minus; measured), over the converged timestamps where the node is measured. {{ reference_node }} is left out: its voltage is the input of the power flow.</p>
+  <table class="data-table">
+    <thead>
+      <tr><th>Node</th><th>Points</th><th>|V| MAE (V)</th><th>|V| max error (V)</th><th>|V| bias (V)</th><th>Angle MAE (&deg;)</th></tr>
+    </thead>
+    <tbody>
+      {% for e in errors %}
+      <tr>
+        <td>{{ e.node_id }}</td><td>{{ e.points }}</td>
+        <td>{{ '%.3f' | format(e.mae_voltage_magnitude) }}</td>
+        <td>{{ '%.3f' | format(e.max_abs_voltage_magnitude) }}</td>
+        <td>{{ '%+.3f' | format(e.bias_voltage_magnitude) }}</td>
+        <td>{{ '%.3f' | format(e.mae_voltage_angle) if e.mae_voltage_angle is not none else '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No node other than {{ reference_node }} has a measured voltage on phase {{ phase }} at the solved timestamps, so there is nothing to compare.</p>
+  {% endif %}
+</section>
+{% endif %}
 
 <section class="panel">
   <h3>Data Table</h3>
-  {{ table_html | safe }}
+  {% if not_converged_points %}
+  <p class="muted" style="color:var(--color-danger);">Rows marked "no" come from timestamps where the power flow did not converge: treat them as unreliable.</p>
+  {% endif %}
+  <div style="max-height:520px; overflow:auto;">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Datetime</th><th>Node</th>
+          <th>Computed |V| (V)</th><th>Computed angle (&deg;)</th>
+          {% if phase != 'N' %}<th>Measured |V| (V)</th><th>Measured angle (&deg;)</th><th>&Delta;|V| (V)</th>{% endif %}
+          <th>Converged</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in results %}
+        <tr>
+          <td>{{ r.timestamp }}</td>
+          <td>{{ r.node_id }}{{ ' (reference)' if r.node_id == reference_node and phase != 'N' else '' }}</td>
+          <td>{{ '%.3f' | format(r.computed.voltage_magnitude) }}</td>
+          <td>{{ '%.3f' | format(r.computed.voltage_angle) }}</td>
+          {% if phase != 'N' %}
+          {% if r.measured and r.measured.voltage_magnitude is not none %}
+          <td>{{ '%.3f' | format(r.measured.voltage_magnitude) }}</td>
+          <td>{{ '%.3f' | format(r.measured.voltage_angle) if r.measured.voltage_angle is not none else '—' }}</td>
+          <td>{{ '%+.3f' | format(r.computed.voltage_magnitude - r.measured.voltage_magnitude) }}</td>
+          {% else %}
+          <td>—</td><td>—</td><td>—</td>
+          {% endif %}
+          {% endif %}
+          <td>{{ 'yes' if r.converged else 'no' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </section>
 {% endif %}
 {% endblock %}
@@ -49,33 +136,65 @@
 {% if not empty %}
 <script>
 (function () {
-  function loadPlotlyAndRender() {
-    var magData = {{ traces_mag | tojson }};
-    var angData = {{ traces_ang | tojson }};
+  var results = {{ results | tojson }};
+  var phase = {{ phase | tojson }};
 
-    Plotly.newPlot('magChart', magData, {
-      title: 'Voltage Magnitude per Node (Phase {{ phase }})',
-      xaxis: { title: 'Datetime' },
-      yaxis: { title: 'Voltage (V)' },
-      plot_bgcolor: '#f8fafc',
-      paper_bgcolor: '#ffffff'
+  // One colour per node, shared by its computed and measured lines.
+  function buildTraces(field) {
+    var byNode = {};
+    results.forEach(function (r) {
+      var n = byNode[r.node_id] || (byNode[r.node_id] = { cx: [], cy: [], mx: [], my: [] });
+      n.cx.push(r.timestamp);
+      n.cy.push(r.computed[field]);
+      if (r.measured && r.measured[field] !== null && r.measured[field] !== undefined) {
+        n.mx.push(r.timestamp);
+        n.my.push(r.measured[field]);
+      }
     });
+    var colours = (window.GA && GA.series) || [];
+    var traces = [];
+    // Metered nodes first, so the nodes with two lines get the most distinct colours.
+    var nodes = Object.keys(byNode).sort(function (a, b) {
+      var am = byNode[a].mx.length ? 0 : 1, bm = byNode[b].mx.length ? 0 : 1;
+      return am - bm || a.localeCompare(b, undefined, { numeric: true });
+    });
+    nodes.forEach(function (node, i) {
+      var n = byNode[node];
+      var colour = colours.length ? colours[i % colours.length] : undefined;
+      traces.push({
+        x: n.cx, y: n.cy, mode: 'lines', name: node + ' · computed', legendgroup: node,
+        line: { color: colour, width: 2 }
+      });
+      if (n.mx.length) {
+        traces.push({
+          x: n.mx, y: n.my, mode: 'lines+markers', name: node + ' · measured', legendgroup: node,
+          line: { color: colour, width: 1, dash: 'dot' }, marker: { color: colour, size: 4 }
+        });
+      }
+    });
+    return traces;
+  }
 
-    Plotly.newPlot('angChart', angData, {
-      title: 'Voltage Angle per Node (Phase {{ phase }})',
+  function render() {
+    var label = phase === 'N' ? 'Neutral' : 'Phase ' + phase;
+    Plotly.newPlot('magChart', buildTraces('voltage_magnitude'), GA.chartLayout({
+      title: 'Voltage Magnitude per Node (' + label + ')',
       xaxis: { title: 'Datetime' },
-      yaxis: { title: 'Angle (°)' },
-      plot_bgcolor: '#f8fafc',
-      paper_bgcolor: '#ffffff'
-    });
+      yaxis: { title: 'Voltage (V)' }
+    }));
+    Plotly.newPlot('angChart', buildTraces('voltage_angle'), GA.chartLayout({
+      title: 'Voltage Angle per Node (' + label + ')',
+      xaxis: { title: 'Datetime' },
+      yaxis: { title: 'Angle (°)' }
+    }));
   }
 
   if (window.Plotly) {
-    loadPlotlyAndRender();
+    render();
   } else {
     var s = document.createElement('script');
     s.src = 'https://cdn.plot.ly/plotly-2.26.0.min.js';
-    s.onload = loadPlotlyAndRender;
+    s.onload = render;
     document.head.appendChild(s);
   }
 })();

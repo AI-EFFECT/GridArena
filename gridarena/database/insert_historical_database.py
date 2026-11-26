@@ -1,6 +1,11 @@
 """Functions to insert historical databases (many series sharing one timeline)."""
 
 
+class HistoricalDataTypeConflict(ValueError):
+    """An upload's data_type differs from the existing database's: series of
+    PV production and of load must not be merged into one database."""
+
+
 def insert_historical_data(database_upload, conn, cursor):
     """
     Inserts a historical database -- its shared timeline and every series
@@ -8,20 +13,34 @@ def insert_historical_data(database_upload, conn, cursor):
     HistoricalSeries and HistoricalRecords.
 
     Re-uploading the same database_id refreshes its metadata, adds any new
-    timestamps, and upserts each series' metadata and records.
+    timestamps, and upserts each series' metadata and records. Its data_type
+    ("load" or "pv") must match the existing database's
+    (HistoricalDataTypeConflict otherwise).
     """
     try:
         database_id = database_upload.database_id
+        data_type = getattr(database_upload, "data_type", "load")
+
+        cursor.execute(
+            'SELECT data_type FROM "HistoricalDatabase" WHERE database_id = %s FOR UPDATE',
+            (database_id,),
+        )
+        existing = cursor.fetchone()
+        if existing is not None and existing[0] != data_type:
+            raise HistoricalDataTypeConflict(
+                f"Database '{database_id}' already exists with data_type '{existing[0]}'; this upload is "
+                f"'{data_type}'. Use another database_id, or delete the existing database first."
+            )
 
         cursor.execute(
             """
-            INSERT INTO "HistoricalDatabase" (database_id, name, description)
-            VALUES (%s, %s, %s)
+            INSERT INTO "HistoricalDatabase" (database_id, name, description, data_type)
+            VALUES (%s, %s, %s, %s)
             ON CONFLICT (database_id) DO UPDATE SET
                 name = EXCLUDED.name,
                 description = EXCLUDED.description
             """,
-            (database_id, database_upload.name, database_upload.description),
+            (database_id, database_upload.name, database_upload.description, data_type),
         )
 
         cursor.executemany(
@@ -79,6 +98,9 @@ def insert_historical_data(database_upload, conn, cursor):
 
         conn.commit()
 
+    except HistoricalDataTypeConflict:
+        conn.rollback()
+        raise
     except Exception as e:
         conn.rollback()
         raise Exception(f"Database error while inserting historical data: {e}")

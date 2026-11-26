@@ -6,45 +6,44 @@
 
 {% block content %}
 
+<!-- Header -->
 <div class="panel">
   <div class="bench-header">
     <h2>State Estimation Benchmark</h2>
-    <p>Download training data, request estimation inputs, submit voltage predictions and evaluate estimation accuracy.</p>
+    <p>Train on fully measured grids, then submit a Python script: GridArena runs it on hidden estimation tasks and scores the voltages it estimates at the unobserved nodes.</p>
   </div>
 </div>
 
+<!-- Summary cards -->
 <div class="bench-summary">
   <div class="bench-summary-card">
-    <div class="bench-summary-card__value" id="scNoise">clean</div>
-    <div class="bench-summary-card__label">Noise Difficulty</div>
+    <div class="bench-summary-card__value" id="scSettings">clean / medium</div>
+    <div class="bench-summary-card__label">Noise / Observability</div>
   </div>
   <div class="bench-summary-card">
-    <div class="bench-summary-card__value" id="scObs">medium</div>
-    <div class="bench-summary-card__label">Observability</div>
-  </div>
-  <div class="bench-summary-card">
-    <div class="bench-summary-card__value" id="scSubmission">Not submitted</div>
-    <div class="bench-summary-card__label">Last Submission</div>
+    <div class="bench-summary-card__value" id="scStatus">Not submitted</div>
+    <div class="bench-summary-card__label">Submission Status</div>
   </div>
   <div class="bench-summary-card">
     <div class="bench-summary-card__value" id="scScore">—</div>
-    <div class="bench-summary-card__label">Last Score (SSE)</div>
+    <div class="bench-summary-card__label">Score (lower is better)</div>
+  </div>
+  <div class="bench-summary-card">
+    <div class="bench-summary-card__value" id="scRuntime">—</div>
+    <div class="bench-summary-card__label">Model Runtime</div>
   </div>
 </div>
 
+<!-- Benchmark Setup -->
 <div class="bench-setup">
   <h3>Benchmark Setup</h3>
   <div class="field">
-    <label title="Your unique identifier for submissions and scoring.">User ID</label>
-    <input class="input" type="text" id="userId" placeholder="Enter your User ID" style="width:220px;">
+    <label title="Labels your submission. Use different values to keep multiple attempts (e.g. alice_v1, alice_v2).">Submission Name</label>
+    <input class="input" type="text" id="submissionName" placeholder="e.g. alice_v1" maxlength="64" style="width:220px;">
   </div>
   <div class="field">
-    <label title="The estimation task identifier returned when downloading estimation input.">Estimation Task ID</label>
-    <input class="input" type="text" id="estimationId" placeholder="Enter Estimation Task ID" style="width:220px;">
-  </div>
-  <div class="field">
-    <label title="Controls the noise/corruption level applied to measurements.">Noise Difficulty</label>
-    <select id="noiseSelect" class="input" style="width:220px;" onchange="document.getElementById('scNoise').textContent = this.value;">
+    <label title="Noise/corruption applied to the measurements, for both the training download and the tasks your script is run on.">Noise Difficulty</label>
+    <select id="noiseSelect" class="input" style="width:220px;">
       <option value="clean" selected>clean</option>
       <option value="easy">easy</option>
       <option value="medium">medium</option>
@@ -52,8 +51,8 @@
     </select>
   </div>
   <div class="field">
-    <label title="Controls how many nodes are unknown and how much history is visible.">Observability</label>
-    <select id="obsSelect" class="input" style="width:220px;" onchange="document.getElementById('scObs').textContent = this.value;">
+    <label title="How many series are unknown at the task timestamp, and how much of their recent history is hidden. 'clean' = everything observed (nothing to estimate).">Observability</label>
+    <select id="obsSelect" class="input" style="width:220px;">
       <option value="clean">clean</option>
       <option value="easy">easy</option>
       <option value="medium" selected>medium</option>
@@ -62,78 +61,46 @@
   </div>
 </div>
 
+<!-- Step 1: Download -->
 <div class="bench-step">
   <div class="bench-step__header">
     <div class="bench-step__number">1</div>
-    <h4 class="bench-step__title">Download Benchmark Data</h4>
+    <h4 class="bench-step__title">Get the Training Data and Template</h4>
   </div>
-  <p class="bench-step__desc">Download training data (all voltages known) and estimation input (some nodes masked) for algorithm development.</p>
+  <p class="bench-step__desc">Download the training grids (every series fully measured) to develop your estimator, and the submission template: a Python file with an empty <code>predict</code> function to fill in. Running the template locally on the training download builds tasks like the test ones and scores them.</p>
+
   <div class="field">
-    <button class="btn-secondary" type="button" id="btnDownloadTrain" title="Training data with all node voltages visible.">Download Training Dataset</button>
-    <button class="btn btn-primary" type="button" id="btnDownloadInput" title="Estimation input with unknown nodes. Requires User ID.">Download Estimation Input</button>
+    <button class="btn-secondary" type="button" id="btnDownloadTrain" title="Fully measured training grids, at the selected noise difficulty.">Download Training Dataset</button>
+    <a class="btn btn-primary" href="/state_estimation_benchmark/submission-template" download title="Python file with the predict() function to fill in.">Download Submission Template</a>
   </div>
   <p class="muted" id="downloadMsg"></p>
 </div>
 
-<div class="bench-step">
-  <div class="bench-step__header">
-    <div class="bench-step__number">2</div>
-    <h4 class="bench-step__title">Submit Estimates</h4>
-  </div>
-  <p class="bench-step__desc">Upload a JSON file containing your estimated voltage magnitude and angle for each masked node.</p>
-  <input id="estimateFile" type="file" accept=".json" hidden>
-  <div id="estimateDrop" class="drop" role="button" tabindex="0">
-    <div class="icon">&#11014;</div>
-    <div class="drop__title">Drop estimate JSON here or click to choose<br><span class="muted">Accepted: .json</span></div>
-    <div class="drop__label muted" id="estimateFileLabel">No file selected</div>
-  </div>
-  <div class="field" style="margin-top:12px;">
-    <button class="btn btn-primary" type="button" id="btnSubmit" disabled>Submit Estimates</button>
-  </div>
-  <p class="muted" id="uploadMsg"></p>
-  <div class="bench-result" id="submitResult">
-    <h4>Submission Received</h4>
-    <p class="muted" id="submitResultMsg"></p>
-  </div>
-</div>
+{% set run_unit = "estimation task (a few timestamps per hidden test grid)" %}
+{% include "benchmarks/_submission_steps.html" %}
 
-<div class="bench-step">
-  <div class="bench-step__header">
-    <div class="bench-step__number">3</div>
-    <h4 class="bench-step__title">Evaluate Score</h4>
-  </div>
-  <p class="bench-step__desc">Compute the sum of squared errors between your estimates and the true voltage values.</p>
-  <div class="field">
-    <button class="btn btn-primary" type="button" id="btnScore">Check Score</button>
-  </div>
-  <div class="bench-result" id="scoreResult">
-    <h4>Score Results</h4>
-    <table id="scoreTable"></table>
-  </div>
-  <div class="bench-result bench-result--error" id="scoreError">
-    <h4>Error</h4>
-    <p class="muted" id="scoreErrorMsg"></p>
-  </div>
-</div>
-
+<!-- Script contract -->
 <details class="bench-hint">
-  <summary>Estimate JSON Format</summary>
+  <summary>Submission Script Format</summary>
   <div class="bench-hint__body">
-    <p>The estimate file should contain <code>grid_id</code>, <code>timestamp</code>, and <code>estimates</code> (a list of objects):</p>
-    <pre>{
-  "grid_id": "masked_grid_abc",
-  "timestamp": "2025-07-01T12:00:00",
-  "estimates": [
-    {"masked_node_id": "m_node_1", "voltage_magnitude": 229.5, "voltage_angle": 0.02},
-    {"masked_node_id": "m_node_2", "voltage_magnitude": 228.1, "voltage_angle": -0.01}
-  ]
-}</pre>
-    <p>See <a href="/docs">API Docs</a> for the full schema specification.</p>
+    <p>The script must define a function <code>predict</code>. It is called once per estimation task: a test grid at one timestamp, where some series (one per node and phase, random keys) are measured and the others must be estimated:</p>
+    <pre>def predict(task):
+    # task = {
+    #     "timestamp": "2025-01-01T12:00:00",
+    #     "known": {"3f9c1a2b7d": {"power_active": 1.24, "power_reactive": 0.08,
+    #                              "voltage_magnitude": 229.7, "voltage_angle": -0.42}, ...},
+    #     "unknown": ["a07be3c95f", ...],
+    #     "history": {"3f9c1a2b7d": [{"datetime": ..., "power_active": ..., ...}, ...], ...},
+    # }
+    return {"a07be3c95f": {"voltage_magnitude": 228.9, "voltage_angle": -121.3}, ...}</pre>
+    <p>Return an estimate for every unknown series: a missing or non-numeric one is scored as 0 V with the worst angle. The score is mean (&Delta;V)&sup2; + mean |sin(&Delta;&theta;)| over all unknown series of all tasks (lower is better); the RMSE of the voltage magnitude and the MAE of the angle are reported too. Every submission with the same settings gets exactly the same tasks. Code at module level runs once before the first call, so load model weights there. The script has no network access and can use the packages installed on the server (numpy, pandas, scipy, torch, ...).</p>
+    <p>See <a href="/docs">API Docs</a> to submit from code: <code>POST /state_estimation_benchmark/submissions</code>.</p>
   </div>
 </details>
 
 {% endblock %}
 
 {% block scripts %}
+<script src="/static/js/benchmark-submissions.js"></script>
 <script src="/static/js/benchmark-state.js"></script>
 {% endblock %}

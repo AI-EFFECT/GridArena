@@ -1,29 +1,38 @@
-"""State Estimation Router with endpoints to retrieve training data, retrieve estimation input,
-submit predictions, and compute score based on squared error."""
+"""State Estimation Router with endpoints to retrieve training data, download the
+submission template, submit an estimation script and get its score."""
 
 import logging
 from collections import defaultdict
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional, get_args
 
-from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 import gridarena.benchmarks.state_estimation as se
 import gridarena.database as db
-import gridarena.schemas as sc
+from gridarena.benchmarks.state_estimation.evaluation import STATE_ESTIMATION_TASK
+from gridarena.routers import _submissions as subs
+from gridarena.routers._upload_guard import ensure_upload_size_ok
+
+logger = logging.getLogger(__name__)
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 templates = Jinja2Templates(directory=_TEMPLATES_DIR)
+
+_SUBMISSION_TEMPLATE = Path(__file__).resolve().parent.parent / "benchmarks" / "state_estimation" / "submission_template.py"
+_TEMPLATE_DOWNLOAD_NAME = "state_estimation_submission.py"
+
+Difficulty = Literal["clean", "easy", "medium", "hard"]
 
 router = APIRouter()
 
 
 @router.get("/training-state-data")
 async def get_training_state_data(
-    noise_difficulty: Literal["clean", "easy", "medium", "hard"] = Query("clean"),
-    observability: Literal["clean", "easy", "medium", "hard"] = Query("medium"),
+    noise_difficulty: Difficulty = Query("clean"),
+    observability: Difficulty = Query("medium"),
 ):
     """
     Retrieves historical measurement data for all nodes and timestamps in the grids
@@ -134,269 +143,95 @@ async def get_training_state_data(
         conn.close()
 
 
-@router.get("/state-data")
-async def get_state_estimation_input(
-    user_id: str = Query(...),
-    noise_difficulty: Literal["clean", "easy", "medium", "hard"] = Query("clean"),
-    observability: Literal["clean", "easy", "medium", "hard"] = Query("medium"),
+@router.get("/submission-template", response_class=FileResponse)
+async def download_submission_template():
+    """
+    Downloads the blank submission script. Fill in its ``predict`` function
+    with your estimator and upload it via ``POST /submissions``.
+    """
+    return subs.template_file(_SUBMISSION_TEMPLATE, _TEMPLATE_DOWNLOAD_NAME)
+
+
+async def get_submission_template_source():
+    """The blank submission script as text (for in-process callers such as the chat assistant)."""
+    return subs.template_source(_SUBMISSION_TEMPLATE, _TEMPLATE_DOWNLOAD_NAME)
+
+
+async def submit_state_estimation_script(
+    source: bytes, filename: str, submission_name: str, noise_difficulty: str, observability: str,
+):
+    """Validate a submission, queue its evaluation and return its record.
+
+    Shared by the upload endpoint and in-process callers (the chat assistant)."""
+    subs.check_choice("noise_difficulty", noise_difficulty, get_args(Difficulty))
+    subs.check_choice("observability", observability, get_args(Difficulty))
+    return subs.submit_script(
+        STATE_ESTIMATION_TASK, source=source, filename=filename, submission_name=submission_name,
+        settings={"noise_difficulty": noise_difficulty, "observability": observability},
+    )
+
+
+@router.post("/submissions", status_code=202)
+async def create_state_estimation_submission(
+    file: UploadFile = File(..., description="A .py file, or a .zip with submission.py at its root."),
+    submission_name: str = Form(..., description="Label for this attempt, e.g. alice_v1."),
+    noise_difficulty: Difficulty = Form("clean"),
+    observability: Difficulty = Form("medium"),
 ):
     """
-    Retrieves state estimation input data for all grids using masked identifiers.
+    Submits a state estimation script for evaluation on hidden estimation tasks.
 
-    This endpoint is idempotent per user: if the caller already has an open
-    (not yet submitted via POST /submit-estimates) estimation task, that same
-    task -- same masked grid, timestamp, and known/unknown split -- is
-    returned again rather than creating a new one. A new task is only
-    created once no open task exists (first call, or the previous one was
-    already submitted). `noise_difficulty` and the measurement-history
-    window still apply fresh on every call; `observability` only affects the
-    known/unknown split, so it's only used when a new task is created.
+    The script must define ``predict(task) -> {series_key: {"voltage_magnitude",
+    "voltage_angle"}}`` (see ``GET /submission-template``). It is checked for
+    syntax and for the function, queued, and then run in a sandbox once per
+    task (a few timestamps per test grid); poll ``GET /submissions/{submission_id}``
+    for its status and score.
+    """
+    ensure_upload_size_ok(file)
+    source = await file.read()
+    return await submit_state_estimation_script(
+        source=source, filename=file.filename or "", submission_name=submission_name,
+        noise_difficulty=noise_difficulty, observability=observability,
+    )
 
-    Args:
-        user_id (str): Identifier for the user requesting the data, used to manage task persistence.
 
-    Returns:
-        dict: Dictionary with test data, eg.::
+@router.get("/submissions")
+async def list_state_estimation_submissions(submission_name: Optional[str] = Query(None)):
+    """
+    Lists state estimation submissions, newest first, optionally only those
+    with the given ``submission_name``.
+    """
+    return subs.list_submissions(STATE_ESTIMATION_TASK, submission_name)
+
+
+@router.get("/submissions/{submission_id}")
+async def get_state_estimation_submission(submission_id: str):
+    """
+    Returns a submission's status (``queued``, ``running``, ``completed`` or
+    ``failed``), its score once completed, its error if it failed, and the
+    tail of its log.
+
+    The score is over every unknown series of every task (lower is better)::
 
           {
-            "Masked GridID": str,
-            "Estimation Task ID": str,
-            "Current State": {
-                "known_nodes": { masked_node_id: {measurement_at_timestamp} },
-                "unknown_nodes": [ masked_node_id, ... ]
-            },
-            "Measurement Data": {
-                masked_node_id: [ {measurement}, ... ]   # all days < timestamp
-            }
-        }
-    """
-    conn, cursor = db.get_db_connection()
-    try:
-        se.ensure_grid_masks(cursor)
-        se.ensure_all_node_masks(cursor)
-
-        open_task = se.get_open_task_for_user(cursor, user_id)
-        if open_task is not None:
-            selected_grid = open_task["grid_id"]
-            selected_time = open_task["timestamp"]
-            selected_eid = open_task["estimation_id"]
-        else:
-            # Get grids marked for testing state estimation
-            cursor.execute(
-                """
-                SELECT grid_id FROM GridUsage WHERE state_estimation_test = 1
-            """
-            )
-            rows = cursor.fetchall()
-            grids_for_testing = set(
-                row[0] for row in rows
-            )  # Use 'rows' instead of calling fetchall() again
-
-            selected_grid = se.get_random_grid(cursor)
-            if selected_grid not in grids_for_testing:
-                raise HTTPException(
-                    status_code=404, detail="No grids available for state estimation testing"
-                )
-
-            selected_time = se.random_timestamp_for_grid(cursor, selected_grid)
-            selected_eid = se.create_estimation_task(
-                cursor,
-                selected_grid,
-                selected_time,
-                user_id,
-                observability=observability,
-            )
-
-        masked_grid = se.get_masked_grid(cursor, selected_grid)
-
-        obs_profile = se.get_observability_profile(observability)
-        unknown_history_seconds = int(float(obs_profile["unknown_history_hours"]) * 3600.0)
-
-        known_nodes, historic_data = se.get_actual_state(
-            cursor,
-            selected_eid,
-            unknown_history_seconds=unknown_history_seconds,
-            known_history_seconds=1,
-        )
-
-        noise_profile = se.get_noise_profile(noise_difficulty)
-        known_nodes_cor, historic_data_cor = se.corrupt_estimation_input(
-            known_nodes=known_nodes,
-            measurement_data=historic_data,
-            noise_profile=noise_profile,
-            masked_grid_id=masked_grid,
-            estimation_id=selected_eid,
-        )
-
-        unknown_nodes = sorted([k for k in historic_data_cor.keys() if k not in known_nodes_cor])
-
-        conn.commit()
-
-        response = {
-            "Masked GridID": masked_grid,
-            "Estimation Task ID": selected_eid,
-            "noise_difficulty": noise_difficulty,
-            "noise_profile": noise_profile,
-            "observability": observability,
-            "observability_profile": obs_profile,
-            "Current State": {
-                "known_nodes": known_nodes_cor,
-                "unknown_nodes": unknown_nodes,
-            },
-            "Measurement Data": historic_data_cor,
-        }
-
-        return response
-
-    except Exception as e:
-        conn.rollback()
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
-    finally:
-        conn.close()
-
-
-@router.post("/submit-estimates")
-async def submit_state_estimates(submission: sc.StateEstimateSubmission):
-    """
-    Receives and stores submitted voltage estimates for a specific estimation task.
-
-    The request must include:
-      - A masked grid ID
-      - A list of masked node IDs with corresponding voltage magnitude and angle
-      - A user ID and estimation task ID
-      - The timestamp of the estimate
-
-    For each masked node ID, the corresponding real node ID and phase are resolved
-    and the values are stored in the `StateEstimates` table. Existing estimates for
-    the same key will be replaced.
-
-    Args:
-        submission (StateEstimateSubmission): The submission payload containing user, task, and voltage estimates.
-
-    Returns:
-        dict: Submission report dictionary, eg.::
-
-          {
-            "status": "submitted"
+              "score": 0.42,                    # mean (dV)^2 + mean |sin(dθ)|
+              "rmse_voltage_magnitude": 0.61,   # over usable estimates
+              "mae_voltage_angle": 0.35,        # over usable estimates
+              "estimates": 120, "missing": 0, "invalid": 0,
+              "tasks": 9, "failed_tasks": 0, "grids": 3,
+              "runtime_seconds": 0.8,
+              "per_grid": [{"grid_id": ..., "tasks": ..., "score": ..., "rmse_voltage_magnitude": ...,
+                            "mae_voltage_angle": ..., "estimates": ..., "missing": ..., "invalid": ...,
+                            "failed_tasks": ..., "seconds": ..., "error": null}, ...]
           }
-
-    Raises:
-        HTTPException 404: If a mask cannot be resolved to a real ID.
-        HTTPException 500: If a database error occurs.
     """
-    conn, cursor = db.get_db_connection()
-    try:
-        # Resolve masked grid ID to real grid ID
-        try:
-            real_gid = se.resolve_grid_id_from_mask(cursor, submission.grid_id)
-        except ValueError:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Masked grid ID '{submission.grid_id}' not found. "
-                       "Download estimation input first to generate the mapping.",
-            )
-
-        # Ensure the grid is eligible for state estimation (testing or training)
-        cursor.execute(
-            """
-            SELECT 1 FROM GridUsage WHERE grid_id = %s AND (state_estimation_train = 1 OR state_estimation_test = 1)
-        """,
-            (real_gid,),
-        )
-        if cursor.fetchone() is None:
-            raise HTTPException(status_code=400, detail="Grid is not eligible for state estimation")
-
-        # Validate estimation_id exists for this user
-        cursor.execute(
-            "SELECT 1 FROM EstimationTasks WHERE user_id = %s AND estimation_id = %s LIMIT 1",
-            (submission.user_id, submission.estimation_id),
-        )
-        if cursor.fetchone() is None:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Estimation task '{submission.estimation_id}' not found for user '{submission.user_id}'. "
-                       "Download estimation input first to create a task.",
-            )
-
-        for node_id_data in submission.estimates:
-            masked_node_id = node_id_data.masked_node_id
-            try:
-                real_nid, phase = se.resolve_node_id_from_mask(cursor, real_gid, masked_node_id)
-            except ValueError:
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"Masked node ID '{masked_node_id}' not found for grid '{submission.grid_id}'.",
-                )
-            real_data = [real_gid, real_nid, phase]
-            se.insert_state_estimation(cursor, submission, node_id_data, real_data)
-
-        conn.commit()
-        return {"status": "submitted", "accepted": len(submission.estimates)}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        conn.rollback()
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
-    finally:
-        conn.close()
-
-
-@router.get("/state-score")
-async def get_state_estimation_score(user_id: str, estimation_id: str):
-    """
-    Computes the sum of squared errors between predicted and true voltage magnitudes
-    and angles for a given estimation task identified by the masked grid ID and timestamp.
-
-    The prediction and ground truth data are resolved using the provided user ID
-    and estimation task ID. The score is calculated using a standard error metric
-    and returned as a rounded float.
-
-    Args:
-        user_id (str): The identifier of the user who submitted the estimates.
-        estimation_id (str): The identifier of the estimation task.
-
-    Returns:
-        dict: Dictionary with submission score information, eg.::
-
-          {
-            "user_id": str,
-            "estimation_id": str,
-            "score": float  # Sum of squared errors (rounded to 6 decimals)
-          }
-
-    Raises:
-        HTTPException 404: If the masked grid ID cannot be resolved.
-        HTTPException 500: If a database error occurs.
-    """
-
-    conn, cursor = db.get_db_connection()
-
-    try:
-        predict_voltage, predict_angles = se.get_predicted_voltages(cursor, user_id, estimation_id)
-        true_voltage, true_angles = se.get_real_voltages(cursor, user_id, estimation_id)
-
-        score = se.get_state_estimation_score(
-            predict_voltage, predict_angles, true_voltage, true_angles
-        )
-
-        return {
-            "user_id": user_id,
-            "estimation_id": estimation_id,
-            "score": round(score, 6),
-        }
-
-    except Exception as e:
-        conn.rollback()
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
-    finally:
-        conn.close()
+    return subs.get_submission(STATE_ESTIMATION_TASK, submission_id)
 
 
 @router.get("/ui", response_class=HTMLResponse, include_in_schema=False)
 def state_estimation_ui(request: Request):
     """Main UI page for State Estimation."""
-    return templates.TemplateResponse("benchmarks/state_estimation.html", {
+    return templates.TemplateResponse(request, "benchmarks/state_estimation.html", {
         "request": request,
         "title": "State Estimation",
         "active": "state_estimation",

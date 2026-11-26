@@ -1,5 +1,4 @@
-import io
-import json
+import time
 from datetime import datetime
 from unittest.mock import MagicMock, patch
 
@@ -7,12 +6,17 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
+import gridarena.benchmarks.voltage_control.get_measurement_data as vc
+import gridarena.database as db
+import gridarena.routers._submissions as submissions_router
 import gridarena.routers.voltage_control_benchmark as vc_router
 from gridarena.app import app
-import gridarena.database as db
+from gridarena.benchmarks.submissions import BenchmarkTask, SubmissionRegistry
+from gridarena.benchmarks.voltage_control import evaluation as vc_eval
+
+from tests._benchmark_helpers import delete_grids, register_grid, wait_for
 
 GRID_ID = "grid_001"
-USER_ID = "user_001"
 VOLTAGE_LIMIT = 230
 
 client = TestClient(app)
@@ -41,7 +45,7 @@ async def test_get_training_scenarios_success(
     ]
 
     result = await vc_router.get_training_voltage_control_data(
-        VOLTAGE_LIMIT, Scenario="Overvoltages"
+        VOLTAGE_LIMIT, Scenario="Overvoltages", difficulty="clean"
     )
     assert "grids" in result
     assert GRID_ID in result["grids"]
@@ -61,7 +65,7 @@ async def test_get_training_scenarios_db_error(mock_get_meas, mock_get_db):
 
     with pytest.raises(HTTPException) as exc:
         await vc_router.get_training_voltage_control_data(
-            VOLTAGE_LIMIT, Scenario="Overvoltages"
+            VOLTAGE_LIMIT, Scenario="Overvoltages", difficulty="clean"
         )
     assert exc.value.status_code == 500
     assert "SQL fail" in exc.value.detail
@@ -70,415 +74,238 @@ async def test_get_training_scenarios_db_error(mock_get_meas, mock_get_db):
 
 
 # -------------------------------------------------
-# Voltage control data (anonymised)
+# Snapshot scoring
 # -------------------------------------------------
-@pytest.mark.asyncio
-@patch("gridarena.routers.voltage_control_benchmark.db.get_db_connection")
-@patch("gridarena.routers.voltage_control_benchmark.vc.get_all_measurements_over")
-@patch("gridarena.routers.voltage_control_benchmark.vc.build_load_voltage_timestamp_keys")
-async def test_get_voltage_control_data_success(
-    mock_build, mock_get_meas, mock_get_db
-):
-    """Should anonymise and organize voltage data properly."""
-    conn, cursor = MagicMock(), MagicMock()
-    mock_get_db.return_value = (conn, cursor)
-
-    measurements = [
-        (GRID_ID, "NODE1", "R", "2025-01-01T00:00:00", 10, 5, 240, 0.1)
-    ]
-    mock_get_meas.return_value = measurements
-    mock_build.return_value = {(GRID_ID, "2025-01-01T00:00:00"): "anon_key_1"}
-
-    result = await vc_router.get_voltage_control_data(VOLTAGE_LIMIT)
-    assert "grids" in result
-    assert GRID_ID in result["grids"]
-    assert "anon_key_1" in result["grids"][GRID_ID]
-    conn.commit.assert_called_once()
-    conn.close.assert_called_once()
+MEAS = [
+    {"node_id": "N1", "phase": "R", "power_active": 10.0, "power_reactive": 1.0,
+     "voltage_magnitude": 245.0, "voltage_angle": 0.0},
+    {"node_id": "N2", "phase": "R", "power_active": 5.0, "power_reactive": 1.0,
+     "voltage_magnitude": 232.0, "voltage_angle": 0.0},
+]
+SOLUTION = [{"node_id": "N1", "phase": "R", "corrected_voltage": 240.0,
+             "adjusted_power_active": 8.0, "adjusted_power_reactive": 1.0}]
 
 
-@pytest.mark.asyncio
-@patch("gridarena.routers.voltage_control_benchmark.db.get_db_connection")
-async def test_get_voltage_control_data_db_error(mock_get_db):
-    """Should raise HTTP 500 if DB query fails."""
-    conn, cursor = MagicMock(), MagicMock()
-    mock_get_db.return_value = (conn, cursor)
-    cursor.execute.side_effect = Exception("SQL fail")
-
-    with pytest.raises(HTTPException) as exc:
-        await vc_router.get_voltage_control_data(VOLTAGE_LIMIT)
-    assert exc.value.status_code == 500
-    assert "SQL fail" in exc.value.detail
-    conn.rollback.assert_called_once()
-    conn.close.assert_called_once()
+def test_score_snapshot_matching_reference_scores_on_effort():
+    prediction = [{"node_id": "N1", "phase": "R", "corrected_voltage": 240.3, "adjusted_power_active": 8.0}]
+    row = vc_eval.score_snapshot(MEAS, SOLUTION, prediction)
+    assert row["mode"] == "ref_voltage_then_effort"
+    assert row["reference_voltage_mae"] == 0.3
+    assert row["timestamp_score"] == round(vc.effort_factor(2.0 / 15.0), 4)
+    assert (row["nodes"], row["changed_nodes"], row["invalid"]) == (2, 1, 0)
 
 
-# -------------------------------------------------
-# Submit results
-# -------------------------------------------------
-@pytest.mark.asyncio
-@patch("gridarena.routers.voltage_control_benchmark.db.get_db_connection")
-async def test_submit_voltage_control_guesses_success(mock_get_db):
-    """Should insert voltage control guesses correctly."""
-    conn, cursor = MagicMock(), MagicMock()
-    mock_get_db.return_value = (conn, cursor)
-
-    # grid exists check returns row, anon key validation returns valid key
-    cursor.fetchone.return_value = (1,)
-    cursor.fetchall.return_value = [("anon1",)]
-
-    node_solution = MagicMock()
-    node_solution.node_id = "NODE1"
-    node_solution.phase = "R"
-    node_solution.corrected_voltage = 230
-    node_solution.adjusted_power_active = 10
-    node_solution.adjusted_power_reactive = 5
-
-    vc_guess = MagicMock()
-    vc_guess.guess_id = USER_ID
-    vc_guess.grid_id = GRID_ID
-    vc_guess.guesses = {"anon1": [node_solution]}
-
-    result = await vc_router.submit_voltage_control_guesses(vc_guess)
-    assert result["status"] == "submitted"
-    assert result["accepted"] == 1
-    conn.commit.assert_called_once()
-    conn.close.assert_called_once()
+def test_score_snapshot_no_answer_counts_as_unchanged():
+    row = vc_eval.score_snapshot(MEAS, SOLUTION, [])
+    assert row["mode"] == "ref_voltage_miss_penalised"
+    assert row["reference_voltage_mae"] == 5.0  # measured 245 vs reference 240
+    assert row["timestamp_score"] == round(1.0 / (1.0 + 25.0), 4)
 
 
-@pytest.mark.asyncio
-@patch("gridarena.routers.voltage_control_benchmark.db.get_db_connection")
-async def test_submit_voltage_control_guesses_db_error(mock_get_db):
-    """Should raise HTTP 500 if DB fails."""
-    conn, cursor = MagicMock(), MagicMock()
-    mock_get_db.return_value = (conn, cursor)
-    cursor.execute.side_effect = Exception("SQL failure")
+def test_score_snapshot_without_reference_uses_outcome():
+    unchanged = vc_eval.score_snapshot(MEAS, [], None)
+    assert unchanged["mode"] == "outcome_only_fallback"
+    assert unchanged["timestamp_score"] == 0.2  # only the power term, on both nodes
 
-    vc_guess = MagicMock()
-    vc_guess.guess_id = USER_ID
-    vc_guess.grid_id = GRID_ID
-    vc_guess.guesses = {}
-
-    with pytest.raises(HTTPException) as exc:
-        await vc_router.submit_voltage_control_guesses(vc_guess)
-    assert exc.value.status_code == 500
-    assert "SQL failure" in exc.value.detail
-    conn.rollback.assert_called_once()
-    conn.close.assert_called_once()
+    fixed = vc_eval.score_snapshot(MEAS, [], [
+        {"node_id": "N1", "phase": "R", "corrected_voltage": 235.0},
+        {"node_id": "N2", "phase": "S", "corrected_voltage": 230.0},   # wrong phase: ignored
+        {"node_id": "N2", "corrected_voltage": "low"},                 # invalid
+    ])
+    assert fixed["invalid"] == 1 and fixed["changed_nodes"] == 1
+    assert fixed["timestamp_score"] > unchanged["timestamp_score"]
 
 
-@pytest.mark.asyncio
-@patch("gridarena.routers.voltage_control_benchmark.db.get_db_connection")
-async def test_submit_voltage_control_guesses_invalid_grid(mock_get_db):
-    """Should raise HTTP 422 for nonexistent grid."""
-    conn, cursor = MagicMock(), MagicMock()
-    mock_get_db.return_value = (conn, cursor)
-
-    cursor.fetchone.return_value = None
-
-    vc_guess = MagicMock()
-    vc_guess.guess_id = USER_ID
-    vc_guess.grid_id = "nonexistent_grid"
-    vc_guess.guesses = {"anon1": []}
-
-    with pytest.raises(HTTPException) as exc:
-        await vc_router.submit_voltage_control_guesses(vc_guess)
-    assert exc.value.status_code == 422
-    conn.close.assert_called_once()
-
-
-@pytest.mark.asyncio
-@patch("gridarena.routers.voltage_control_benchmark.db.get_db_connection")
-async def test_submit_voltage_control_guesses_invalid_keys(mock_get_db):
-    """Should raise HTTP 422 for unknown anonymised keys."""
-    conn, cursor = MagicMock(), MagicMock()
-    mock_get_db.return_value = (conn, cursor)
-
-    # grid exists, but anon key validation returns empty
-    cursor.fetchone.return_value = (1,)
-    cursor.fetchall.return_value = []
-
-    vc_guess = MagicMock()
-    vc_guess.guess_id = USER_ID
-    vc_guess.grid_id = GRID_ID
-    vc_guess.guesses = {"bad_key": []}
-
-    with pytest.raises(HTTPException) as exc:
-        await vc_router.submit_voltage_control_guesses(vc_guess)
-    assert exc.value.status_code == 422
-    conn.close.assert_called_once()
-
-
-# -------------------------------------------------
-# Score
-# -------------------------------------------------
-@pytest.mark.asyncio
-@patch("gridarena.routers.voltage_control_benchmark.db.get_db_connection")
-async def test_get_score_computes_accuracy(mock_get_db):
-    """Should compute voltage correction scores correctly."""
-    conn, cursor = MagicMock(), MagicMock()
-    mock_get_db.return_value = (conn, cursor)
-
-    # First fetchall: user guesses; second fetchall: measurements
-    cursor.fetchall.side_effect = [
-        [
-            (
-                "anon1",
-                '{"NODE1": {"phase": "R", "corrected_voltage": 230}}',
-                '{"NODE1": {"adjusted_power_active": 10, "adjusted_power_reactive": 5}}',
-                "2025-01-01T00:00:00",
-            )
-        ],
-        [("NODE1", "R", 240, 10, 5)],
-    ]
-
-    result = await vc_router.get_score(USER_ID, grid_id=GRID_ID)
-    assert result["grid_id"] == GRID_ID
-    assert "overall_score" in result
-    assert isinstance(result["overall_score"], float)
-    conn.close.assert_called_once()
-
-
-@pytest.mark.asyncio
-@patch("gridarena.routers.voltage_control_benchmark.db.get_db_connection")
-async def test_get_score_db_error(mock_get_db):
-    """Should raise HTTP 500 on DB error and call rollback."""
-    conn, cursor = MagicMock(), MagicMock()
-    mock_get_db.return_value = (conn, cursor)
-    cursor.execute.side_effect = Exception("SQL failure")
-
-    with pytest.raises(HTTPException) as exc:
-        await vc_router.get_score(USER_ID, grid_id=GRID_ID)
-    assert exc.value.status_code == 500
-    assert "SQL failure" in exc.value.detail
-    conn.rollback.assert_called_once()
-    conn.close.assert_called_once()
-
-
-# ----------------------------------------------------------------------------------------
-# Integration-style tests using the real app + DB
-# ----------------------------------------------------------------------------------------
-
-
-def _setup_voltage_grid(grid_id: str, overvoltage: bool = True) -> str:
-    """
-    Register a grid and upload historical data via the public API.
-    Returns the timestamp used for the measurements.
-    """
-    grid_payload = {
-        "grid_id": grid_id,
-        "nodes": [
-            {"node_id": "PT", "coord_lat": 38.65, "coord_lon": -7.98, "coord_error": 1},
-            {
-                "node_id": "NODE1",
-                "coord_lat": 38.651,
-                "coord_lon": -7.981,
-                "coord_error": 1,
-            },
-        ],
-        "connections": [
-            {
-                "connection_id": "L1",
-                "from_node_id": "PT",
-                "to_node_id": "NODE1",
-                "length": 1000,
-                "cable_id": "TypeLine00001",
-            }
-        ],
-        "cables": [
-            {
-                "cable_id": "TypeLine00001",
-                "r_imp_real": 0.01,
-                "r_imp_imag": 0.001,
-                "s_imp_real": 0.01,
-                "s_imp_imag": 0.001,
-                "t_imp_real": 0.01,
-                "t_imp_imag": 0.001,
-                "r_nom_curr": 10000,
-                "s_nom_curr": 10000,
-                "t_nom_curr": 10000,
-            }
-        ],
+def test_score_predictions_weights_nodes_and_reports_errors():
+    truth = {
+        "0000": {"grid_id": "gA", "datetime": "2025-07-01T12:00:00", "measurements": MEAS, "solutions": SOLUTION},
+        "0001": {"grid_id": "gB", "datetime": "2025-07-01T13:00:00", "measurements": MEAS[:1], "solutions": []},
     }
-
-    now = datetime.utcnow().isoformat()
-
-    voltage_mag = 240.0 if overvoltage else 210.0
-
-    hist_payload = {
-        "grid_id": grid_id,
-        "historical": [
-            {
-                "node_id": "PT",
-                "measurements": [
-                    {
-                        "datetime": now,
-                        "phase": "R",
-                        "power_active": 0.0,
-                        "power_reactive": 0.0,
-                        "voltage_magnitude": 230.0,
-                        "voltage_angle": 0.0,
-                    }
-                ],
-            },
-            {
-                "node_id": "NODE1",
-                "measurements": [
-                    {
-                        "datetime": now,
-                        "phase": "R",
-                        "power_active": 10.0,
-                        "power_reactive": 5.0,
-                        "voltage_magnitude": voltage_mag,
-                        "voltage_angle": 0.0,
-                    }
-                ],
-            },
-        ],
+    outputs = {
+        "0000": {"ok": True, "seconds": 0.1, "result": [
+            {"node_id": "N1", "phase": "R", "corrected_voltage": 240.0, "adjusted_power_active": 10.0}]},
+        "0001": {"ok": False, "error": "Traceback\nRuntimeError: no solver", "seconds": 0.2},
     }
+    score = vc_eval.score_predictions(outputs, truth)
+    assert score["per_snapshot"][0]["timestamp_score"] == 1.0   # reference matched, no effort
+    gb = score["per_snapshot"][1]
+    assert gb["error"] == "RuntimeError: no solver" and gb["mode"] == "outcome_only_fallback"
+    assert score["score"] == round((1.0 * 2 + gb["timestamp_score"] * 1) / 3, 4)
+    assert (score["snapshots"], score["nodes"], score["failed_snapshots"], score["grids"]) == (2, 3, 1, 2)
 
-    grid_bytes = io.BytesIO(json.dumps(grid_payload).encode("utf-8"))
-    resp_grid = client.post(
-        "/grid/",
-        files={"file": ("grid.json", grid_bytes, "application/json")},
+
+def test_build_test_inputs_from_snapshots():
+    snapshots = [{"grid_id": "gA", "datetime": datetime(2025, 7, 1, 12), "measurements": MEAS, "solutions": SOLUTION}]
+    settings = {"voltage_limit": 241.5, "scenario": "Overvoltages", "difficulty": "clean"}
+    prepared = vc_eval.build_test_inputs(settings, snapshots=snapshots)
+    (snapshot,) = prepared.calls["0000"]
+    assert snapshot == {
+        "datetime": "2025-07-01T12:00:00", "scenario": "Overvoltages", "voltage_limit": 241.5,
+        "nominal_voltage": 230.0, "voltage_band": 0.05, "measurements": MEAS,
+    }
+    assert prepared.truth["0000"]["solutions"] == SOLUTION
+    with pytest.raises(Exception, match="No test snapshots"):
+        vc_eval.build_test_inputs(settings, snapshots=[])
+
+
+# -------------------------------------------------
+# Running submissions and the HTTP endpoints (no database)
+# -------------------------------------------------
+SNAPSHOTS = [
+    {"grid_id": "gA", "datetime": datetime(2025, 7, 1, 12), "measurements": MEAS, "solutions": SOLUTION},
+    {"grid_id": "gA", "datetime": datetime(2025, 7, 1, 13), "measurements": MEAS, "solutions": []},
+]
+
+# Curtails the over-limit nodes and reports the voltage the reference would reach.
+CURTAIL_SCRIPT = """
+def predict(snapshot):
+    actions = []
+    for m in snapshot["measurements"]:
+        if m["voltage_magnitude"] > snapshot["voltage_limit"]:
+            actions.append({"node_id": m["node_id"], "phase": m["phase"], "corrected_voltage": 240.0,
+                            "adjusted_power_active": 0.8 * m["power_active"]})
+    return actions
+"""
+
+
+def _task():
+    return BenchmarkTask(
+        name=vc_eval.VOLTAGE_CONTROL_TASK.name, function="predict",
+        build_inputs=lambda settings: vc_eval.build_test_inputs(settings, snapshots=SNAPSHOTS),
+        score=vc_eval.score_predictions,
     )
-    assert resp_grid.status_code == 200, resp_grid.text
 
-    hist_bytes = io.BytesIO(json.dumps(hist_payload).encode("utf-8"))
-    resp_hist = client.post(
-        "/measurements/",
-        files={"file": ("hist.json", hist_bytes, "application/json")},
+
+@pytest.fixture
+def registry(tmp_path):
+    reg = SubmissionRegistry(runs_dir=tmp_path / "runs")
+    yield reg
+    reg.shutdown()
+
+
+@pytest.fixture
+def patched_router(registry, monkeypatch):
+    monkeypatch.setattr(submissions_router, "submission_registry", registry)
+    monkeypatch.setattr(vc_router, "VOLTAGE_CONTROL_TASK", _task())
+    return registry
+
+
+def test_submission_template_runs_as_a_submission(registry):
+    source = vc_router._SUBMISSION_TEMPLATE.read_bytes()
+    record = registry.submit(_task(), filename="t.py", data=source, submission_name="template",
+                             settings={"voltage_limit": 241.5, "scenario": "Overvoltages", "difficulty": "clean"})
+    done = wait_for(registry, record["submission_id"], "voltage_control")
+    assert done["status"] == "completed", done
+    # "No action" leaves N1 5 V from the reference, and earns only the power term without one.
+    assert [r["mode"] for r in done["score"]["per_snapshot"]] == ["ref_voltage_miss_penalised", "outcome_only_fallback"]
+    assert done["score"]["failed_snapshots"] == 0
+
+
+def test_download_submission_template():
+    resp = client.get(f"{BENCH_PREFIX}/submission-template")
+    assert resp.status_code == 200
+    assert "voltage_control_submission.py" in resp.headers["content-disposition"]
+    assert "def predict(snapshot)" in resp.text
+
+
+def test_submit_poll_and_list_over_http(patched_router):
+    resp = client.post(
+        f"{BENCH_PREFIX}/submissions",
+        files={"file": ("model.py", CURTAIL_SCRIPT.encode(), "text/x-python")},
+        data={"submission_name": "alice_v1", "voltage_limit": "241.5", "Scenario": "Overvoltages"},
     )
-    assert resp_hist.status_code == 200, resp_hist.text
+    assert resp.status_code == 202, resp.text
+    submission_id = resp.json()["submission_id"]
 
-    return now
+    deadline = time.time() + 60
+    while True:
+        record = client.get(f"{BENCH_PREFIX}/submissions/{submission_id}").json()
+        if record["status"] in ("completed", "failed") or time.time() > deadline:
+            break
+        time.sleep(0.1)
+    assert record["status"] == "completed", record
+    assert record["settings"] == {"voltage_limit": 241.5, "scenario": "Overvoltages", "difficulty": "clean"}
+    assert record["score"]["per_snapshot"][0]["mode"] == "ref_voltage_then_effort"
+
+    listed = client.get(f"{BENCH_PREFIX}/submissions", params={"submission_name": "alice_v1"}).json()
+    assert [r["submission_id"] for r in listed["submissions"]] == [submission_id]
 
 
-def test_get_training_voltage_control_data_integration():
-    """Should return valid training data (Overvoltages)."""
+@pytest.mark.parametrize("data, detail", [
+    ({"submission_name": "a"}, "voltage_limit"),
+    ({"submission_name": "a", "voltage_limit": "-3"}, "voltage_limit"),
+    ({"submission_name": "a", "voltage_limit": "241", "Scenario": "Blackout"}, "Scenario"),
+])
+def test_submit_rejects_bad_settings(patched_router, data, detail):
+    resp = client.post(f"{BENCH_PREFIX}/submissions", files={"file": ("m.py", CURTAIL_SCRIPT.encode())}, data=data)
+    assert resp.status_code == 422
+    assert detail in resp.text
+
+
+def test_old_test_data_endpoints_are_gone():
+    assert client.get(f"{BENCH_PREFIX}/voltage-control-data", params={"voltage_limit": 230}).status_code == 404
+    assert client.get(f"{BENCH_PREFIX}/score", params={"guess_id": "a", "grid_id": "b"}).status_code == 404
+
+
+# -------------------------------------------------
+# Integration (real FastAPI + PostgreSQL)
+# -------------------------------------------------
+TEST_GRID_IDS = ["vc_grid_train_pg1", "vc_grid_test_pg1"]
+SNAPSHOT_TIME = datetime(2025, 7, 1, 12)
+
+
+@pytest.fixture(scope="module")
+def clean_db():
+    """Deletes only this module's own test grids, before and after."""
+    delete_grids(TEST_GRID_IDS)
+    yield
+    delete_grids(TEST_GRID_IDS)
+
+
+def _setup_voltage_grid(grid_id, usage):
+    """PT at 230 V, NODE1 in overvoltage (250 V), plus a reference solution for NODE1."""
+    def meas(v, p):
+        return [{"datetime": SNAPSHOT_TIME.isoformat(), "phase": "R", "power_active": p,
+                 "power_reactive": 1.0, "voltage_magnitude": v, "voltage_angle": 0.0}]
+
+    register_grid(client, grid_id, edges=[("PT", "NODE1")],
+                  measurements={"PT": meas(230.0, 0.0), "NODE1": meas(250.0, 10.0)}, usage=usage)
+    conn, cursor = db.get_db_connection()
+    try:
+        cursor.execute(
+            """INSERT INTO "VoltageControlSolutions"
+               (grid_id, datetime, node_id, phase, corrected_voltage, adjusted_power_active, adjusted_power_reactive)
+               VALUES (%s, %s, 'NODE1', 'R', 240.0, 8.0, 1.0)""",
+            (grid_id, SNAPSHOT_TIME),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def test_get_training_voltage_control_data_integration(clean_db):
     grid_id = "vc_grid_train_pg1"
-    _setup_voltage_grid(grid_id, overvoltage=True)
+    _setup_voltage_grid(grid_id, {"voltage_control_train"})
 
-    response = client.get(
-        f"{BENCH_PREFIX}/training-scenarios?voltage_limit={VOLTAGE_LIMIT}"
-        f"&Scenario=Overvoltages"
-    )
+    response = client.get(f"{BENCH_PREFIX}/training-scenarios",
+                          params={"voltage_limit": 241.5, "Scenario": "Overvoltages"})
     assert response.status_code == 200, response.text
-    data = response.json()
-    assert grid_id in data["grids"]
-    # Ensure at least one snapshot has measurements
-    assert any(
-        "measurements" in snap for snap in data["grids"][grid_id].values()
-    )
+    snapshots = response.json()["grids"][grid_id]
+    (snap,) = snapshots.values()
+    assert snap["solutions"][0]["corrected_voltage"] == 240.0
 
 
-def test_get_voltage_control_data_integration():
-    """Should return anonymised voltage control data."""
-    grid_id = "vc_grid_vcdata_pg1"
-    _setup_voltage_grid(grid_id, overvoltage=True)
+def test_script_submission_integration(clean_db, registry, monkeypatch):
+    grid_id = "vc_grid_test_pg1"
+    _setup_voltage_grid(grid_id, {"voltage_control_test"})
+    monkeypatch.setattr(submissions_router, "submission_registry", registry)
 
-    response = client.get(
-        f"{BENCH_PREFIX}/voltage-control-data?voltage_limit={VOLTAGE_LIMIT}"
-    )
-    assert response.status_code == 200, response.text
-    data = response.json()
-    assert "grids" in data
-    assert grid_id in data["grids"]
-    assert len(data["grids"][grid_id]) > 0
+    resp = client.post(f"{BENCH_PREFIX}/submissions", files={"file": ("m.py", CURTAIL_SCRIPT.encode())},
+                       data={"submission_name": "integration", "voltage_limit": "241.5"})
+    assert resp.status_code == 202, resp.text
 
-
-def test_submit_voltage_control_guesses_integration():
-    """Should insert guesses successfully into DB through the API."""
-    grid_id = "vc_grid_submit_pg1"
-    timestamp = _setup_voltage_grid(grid_id, overvoltage=True)
-
-    # Ensure the anonymised key exists in VoltageTimestampMapping (FK target)
-    anon_key = "anon_submit1"
-    conn, cursor = db.get_db_connection()
-    try:
-        db.create_voltage_timestamp_map_table(cursor)
-        cursor.execute(
-            """
-            INSERT INTO "VoltageTimestampMapping" (anonymised_key, grid_id, datetime)
-            VALUES (%s, %s, %s)
-            """,
-            (anon_key, grid_id, timestamp),
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-    body = {
-        "guess_id": USER_ID,
-        "grid_id": grid_id,
-        "guesses": {
-            anon_key: [
-                {
-                    "node_id": "NODE1",
-                    "phase": "R",
-                    "corrected_voltage": 230.0,
-                    "adjusted_power_active": 10.0,
-                    "adjusted_power_reactive": 5.0,
-                }
-            ]
-        },
-    }
-
-    response = client.post(f"{BENCH_PREFIX}/submit-results", json=body)
-    assert response.status_code == 200, response.text
-    data = response.json()
-    assert data["status"] == "submitted"
-
-
-def test_get_voltage_control_score_integration():
-    """Should compute a score based on stored guesses and measurements."""
-    grid_id = "vc_grid_score_pg1"
-    timestamp = _setup_voltage_grid(grid_id, overvoltage=True)
-
-    # Prepare mapping + guesses directly in the DB using helper creators
-    conn, cursor = db.get_db_connection()
-    try:
-        db.create_voltage_timestamp_map_table(cursor)
-        db.create_vc_guesses_database(cursor)
-
-        # Map anonymised key to (grid, timestamp)
-        cursor.execute(
-            """
-            INSERT INTO "VoltageTimestampMapping" (anonymised_key, grid_id, datetime)
-            VALUES (%s, %s, %s)
-            """,
-            ("anon1", grid_id, timestamp),
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-    # Submit guesses via the API so they are stored in VCUserGuesses
-    body = {
-        "guess_id": USER_ID,
-        "grid_id": grid_id,
-        "guesses": {
-            "anon1": [
-                {
-                    "node_id": "NODE1",
-                    "phase": "R",
-                    "corrected_voltage": 231.0,
-                    "adjusted_power_active": 10.0,
-                    "adjusted_power_reactive": 5.0,
-                }
-            ]
-        },
-    }
-
-    submit_resp = client.post(f"{BENCH_PREFIX}/submit-results", json=body)
-    assert submit_resp.status_code == 200, submit_resp.text
-
-    # Now compute score
-    response = client.get(
-        f"{BENCH_PREFIX}/score?guess_id={USER_ID}&grid_id={grid_id}"
-    )
-    assert response.status_code == 200, response.text
-    data = response.json()
-    assert "overall_score" in data
-    assert isinstance(data["overall_score"], float)
-    assert data["total_nodes"] >= 1
+    done = wait_for(registry, resp.json()["submission_id"], "voltage_control", timeout=120)
+    assert done["status"] == "completed", done
+    (mine,) = [r for r in done["score"]["per_snapshot"] if r["grid_id"] == grid_id]
+    assert (mine["nodes"], mine["changed_nodes"], mine["mode"]) == (2, 1, "ref_voltage_then_effort")
+    assert mine["reference_voltage_mae"] == 0.0

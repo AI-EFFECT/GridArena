@@ -7,7 +7,7 @@ BASE_DIR = Path(__file__).resolve().parent
 def get_llm_config() -> dict:
     return {
         "api_key": os.environ.get("LLM_API_KEY", ""),
-        "api_url": os.environ.get("LLM_API_URL", "https://llm.example.com/api"),
+        "api_url": os.environ.get("LLM_API_URL", ""),
         "model": os.environ.get("LLM_MODEL", "gemma4-31b"),
         "docs_dir": BASE_DIR / "docs",
         "chroma_db_path": BASE_DIR / "rag" / "chroma_db",

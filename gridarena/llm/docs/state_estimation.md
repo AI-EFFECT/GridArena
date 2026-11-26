@@ -6,6 +6,8 @@ The State Agent provides the State Estimation Benchmark. The goal is to predict 
 
 This is a regression problem grounded in power system physics: voltage at unobserved nodes is not random — it is constrained by Kirchhoff's laws and the grid topology. Good algorithms exploit this structure.
 
+The benchmark provides training data with every series measured. The test tasks are never downloaded: instead you submit a Python script defining `predict(task)`, the server runs it on hidden estimation tasks (a few timestamps per test grid) and scores the voltages it estimates.
+
 **Typical use case:** A grid operator has smart meters at some nodes but not all. State estimation fills in the missing voltage picture across the full network.
 
 ---
@@ -37,26 +39,45 @@ Use this when you want to develop or train a state estimation algorithm, access 
 
 ---
 
-### get_state_estimation_input
+### get_state_estimation_submission_template
 
-Use this when you want to run your state estimation algorithm on the actual test case. Some node voltages are masked — you must predict them.
+Use this when you want to write a state estimation method to submit, or need to know the exact input and output format the submitted script must follow.
 
-**Parameters:**
-- `user_id` (string, required): Your user identifier
-- `noise_difficulty` (string, optional, default=`"clean"`): Should match the difficulty used in training
-- `observability` (string, optional, default=`"medium"`): Controls the fraction of nodes that are masked
+**Parameters:** none.
 
-**Returns:** Time-series measurements where some nodes have voltage values hidden. The response also contains an `estimation_id` used for submission.
+**Returns:** `filename` and `source` of the blank submission script.
 
 **How to interpret:**
-- Nodes with missing values are the ones you must estimate
-- Use the observed nodes and your knowledge of grid topology to infer the missing voltages
-- The `estimation_id` in the response must be included when submitting results
+- The script defines `predict(task)`, called once per estimation task (one test grid at one timestamp)
+- `task` has `timestamp`, `known` (series key -> measurement at the timestamp), `unknown` (series keys to estimate) and `history` (series key -> records before the timestamp; unknown series stop a few hours earlier)
+- It must return `{series_key: {"voltage_magnitude": ..., "voltage_angle": ...}}` for every unknown key
+- The template's default `predict` is a simple baseline; replace its body with the actual method
+- The script runs without network access, with numpy, pandas, scipy, networkx and torch available
+
+---
+
+### submit_state_estimation_script
+
+Use this when you want to evaluate a state estimation method on the hidden test data.
+
+**Parameters:**
+- `submission_name` (string, required): A label for this attempt (e.g. `"run_001"`); letters, digits, `_`, `-`, `.`
+- `code` (string, required): The full Python source, based on the submission template
+- `noise_difficulty` (string, optional, default=`"clean"`): Noise level of the test measurements
+- `observability` (string, optional, default=`"medium"`): How many series are unknown and how much of their history is hidden
+
+**Returns:** The submission record with its `submission_id` and `status` (`queued`).
+
+**Notes:**
+- The script is checked for syntax errors and for a top-level `predict` function before it is queued
+- Evaluation runs in the background; use `get_state_estimation_submission` with the returned `submission_id` to follow it
+- The test data itself is never downloadable: only the submitted script sees it
 
 **Example:**
 ```json
 {
-  "user_id": "user_001",
+  "submission_name": "run_001",
+  "code": "def predict(task):\n    v = [m['voltage_magnitude'] for m in task['known'].values()]\n    avg = sum(v) / len(v) if v else 230.0\n    return {k: {'voltage_magnitude': avg, 'voltage_angle': 0.0} for k in task['unknown']}\n",
   "noise_difficulty": "clean",
   "observability": "medium"
 }
@@ -64,68 +85,25 @@ Use this when you want to run your state estimation algorithm on the actual test
 
 ---
 
-### submit_state_estimates
+### get_state_estimation_submission
 
-Use this when you want to submit your predicted voltage values for the masked nodes.
-
-**Parameters:**
-- `user_id` (string, required): Your user identifier
-- `estimation_id` (string, required): The ID returned by `get_state_estimation_input`
-- `grid_id` (string, required): The grid the estimation is for
-- `timestamp` (string, required): The specific timestamp being estimated (ISO 8601)
-- `estimates` (array, required): List of predictions, one per masked node, each containing `masked_node_id`, `voltage_magnitude`, and `voltage_angle`
-
-**Returns:** Confirmation of submission.
-
-**Notes:**
-- Every masked node must have a prediction — partial submissions are rejected
-- `voltage_magnitude` should be in volts (e.g. 229.5), not per unit
-- `voltage_angle` should be in degrees
-
-**Example:**
-```json
-{
-  "user_id": "user_001",
-  "estimation_id": "est_001",
-  "grid_id": "grid001",
-  "timestamp": "2025-07-01T12:00:00",
-  "estimates": [
-    {
-      "masked_node_id": "node_3",
-      "voltage_magnitude": 229.5,
-      "voltage_angle": -5.2
-    },
-    {
-      "masked_node_id": "node_7",
-      "voltage_magnitude": 227.1,
-      "voltage_angle": -6.8
-    }
-  ]
-}
-```
-
----
-
-### get_state_estimation_score
-
-Use this when you want to evaluate how accurate your voltage predictions were.
+Use this when you want to know whether a submitted script has finished and how well it did.
 
 **Parameters:**
-- `user_id` (string, required): Your user identifier
-- `estimation_id` (string, required): The ID used when submitting predictions
+- `submission_id` (string, required): The ID returned by `submit_state_estimation_script`
 
-**Returns:** Error score for the submission.
+**Returns:** The submission's `status` (`queued`, `running`, `completed`, `failed`), its `score` when completed, its `error` when failed, and `log_tail` (what the script printed, plus tracebacks).
 
 **How to interpret:**
-- The score represents prediction error (e.g. Mean Absolute Error or RMSE) — **lower is better**
-- A score near 0 means your estimates closely matched the true voltages
-- High error on voltage angle typically indicates the algorithm is not accounting for power flow direction
-- High error on voltage magnitude typically means the algorithm is not capturing load-driven voltage drops along the feeder
+- `score.score` = mean squared voltage-magnitude error + mean |sin| of the angle error, over every unknown series of every task: lower is better
+- A missing or non-numeric estimate is scored as 0 V with the worst angle, so always return one
+- `score.rmse_voltage_magnitude` and `score.mae_voltage_angle` are over the usable estimates; `score.per_grid` breaks results down per test grid
+- Every submission with the same settings gets exactly the same tasks, so scores are comparable
+- When `status` is `failed`, read `error` and `log_tail` to fix the script and submit again
 
 **Example:**
 ```json
 {
-  "user_id": "user_001",
-  "estimation_id": "est_001"
+  "submission_id": "3f9c1a2b7d4e"
 }
 ```

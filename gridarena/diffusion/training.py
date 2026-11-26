@@ -5,7 +5,8 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-from gridarena.diffusion.job_common import load_snapshots_and_config, update_run_config
+from gridarena.diffusion.job_common import load_snapshots_and_config, mark_cancelled, update_run_config
+from gridarena.run_cancellation import CancelCheck, TrainingCancelled, is_cancel_requested
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,9 @@ def run_diffusion_training(run_dir: str) -> dict:
     with open(config_path) as f:
         run_data = json.load(f)
 
+    if is_cancel_requested(run_dir):
+        return mark_cancelled(run_dir)
+
     update_run_config(run_dir, {"status": "running"})
 
     try:
@@ -36,6 +40,7 @@ def run_diffusion_training(run_dir: str) -> dict:
             p_dataset=power_snapshots,
             config=config,
             output_dir=run_dir,
+            should_stop=CancelCheck(run_dir),
         )
 
         metrics["dataset_shape"] = list(power_snapshots.shape)
@@ -50,6 +55,8 @@ def run_diffusion_training(run_dir: str) -> dict:
 
         return {"status": "completed", "metrics": metrics}
 
+    except TrainingCancelled:
+        return mark_cancelled(run_dir)
     except Exception as e:
         logger.error("Diffusion training failed: %s", e, exc_info=True)
         update_run_config(run_dir, {

@@ -454,10 +454,10 @@ async def test_process_message_runs_two_tool_rounds(mock_config, mock_dispatcher
             }]
         }
 
-    round1_response = _tool_call_response("get_phase_identification_data", "{}")
-    round2_response = _tool_call_response("submit_phase_guesses", '{"guess_id": "g1"}')
+    round1_response = _tool_call_response("get_phase_submission_template", "{}")
+    round2_response = _tool_call_response("submit_phase_script", '{"submission_name": "g1", "code": ""}')
     final_response = {
-        "choices": [{"message": {"role": "assistant", "content": "Submitted your guesses."}}]
+        "choices": [{"message": {"role": "assistant", "content": "Submitted your script."}}]
     }
 
     call_count = 0
@@ -484,8 +484,8 @@ async def test_process_message_runs_two_tool_rounds(mock_config, mock_dispatcher
          patch("gridarena.llm.chat.run_tool", side_effect=mock_run_tool):
         result = await session.process_message("run the phase benchmark and submit")
 
-    assert executed_tools == ["get_phase_identification_data", "submit_phase_guesses"]
-    assert result == "Submitted your guesses."
+    assert executed_tools == ["get_phase_submission_template", "submit_phase_script"]
+    assert result == "Submitted your script."
     assert call_count == 3
 
 

@@ -82,17 +82,17 @@
         <input id="endDt" class="input" type="datetime-local" style="width:220px;">
       </div>
       <div class="field">
-        <label style="min-width:160px;">P Min (kW)</label>
+        <label style="min-width:160px;">P Min (W)</label>
         <input id="pMin" class="input" type="number" step="0.1" style="width:220px;">
       </div>
       <div class="field">
-        <label style="min-width:160px;">P Max (kW)</label>
+        <label style="min-width:160px;">P Max (W)</label>
         <input id="pMax" class="input" type="number" step="0.1" style="width:220px;">
       </div>
     </div>
   </details>
 
-  <div id="dataPreview" style="margin-top:12px; padding:10px 14px; background:#f8fafc; border-radius:6px; font-size:12px; color:#64748b;">
+  <div id="dataPreview" style="margin-top:12px; padding:10px 14px; background:var(--color-surface-sunken); border-radius:6px; font-size:12px; color:var(--color-text-muted);">
     No grids selected.
   </div>
 </div>
@@ -169,7 +169,7 @@
 
   <div class="dp-card" id="dpCard">
     <h4>Privacy Protection</h4>
-    <p style="font-size:12px; color:#64748b; margin:0 0 10px;">DP-SGD adds per-sample gradient clipping and calibrated noise to prevent the model from memorising individual training examples.</p>
+    <p style="font-size:12px; color:var(--color-text-muted); margin:0 0 10px;">DP-SGD adds per-sample gradient clipping and calibrated noise to prevent the model from memorising individual training examples.</p>
 
     <div class="field">
       <label style="min-width:160px;">Enable DP-SGD</label>
@@ -180,15 +180,15 @@
     <div id="dpParams" style="display:none; margin-top:12px;">
       <div class="field">
         <label style="min-width:160px;" title="Per-sample gradient clip norm (C).">Max Grad Norm</label>
-        <input id="dpMaxGradNorm" class="input" type="number" value="1.0" step="0.1" min="0.01" style="width:180px;">
+        <input id="dpMaxGradNorm" class="input" type="number" value="1.0" step="any" min="0.01" style="width:180px;">
       </div>
       <div class="field">
         <label style="min-width:160px;" title="Noise multiplier (sigma).">Noise Multiplier</label>
-        <input id="dpNoiseMultiplier" class="input" type="number" value="1.0" step="0.1" min="0.01" style="width:180px;">
+        <input id="dpNoiseMultiplier" class="input" type="number" value="1.0" step="any" min="0.01" style="width:180px;">
       </div>
       <div class="field">
         <label style="min-width:160px;" title="Target delta for (epsilon, delta)-DP.">Target Delta</label>
-        <input id="dpTargetDelta" class="input" type="number" value="0.00001" step="0.000001" min="0.0000001" style="width:180px;">
+        <input id="dpTargetDelta" class="input" type="number" value="0.00001" step="any" min="0.0000001" style="width:180px;">
       </div>
     </div>
   </div>
@@ -227,7 +227,7 @@
 
   <div class="dp-card">
     <h4>Privacy Check</h4>
-    <p style="font-size:12px; color:#64748b; margin:0 0 10px;">Empirically audits whether the model memorises training data: a membership-inference attack (AUC) plus a canary-insertion test. Trains a throwaway diagnostic model with canaries injected — no shippable model is produced.</p>
+    <p style="font-size:12px; color:var(--color-text-muted); margin:0 0 10px;">Empirically audits whether the model memorises training data: a membership-inference attack (AUC) plus a canary-insertion test. Trains a throwaway diagnostic model with canaries injected — no shippable model is produced.</p>
     <details class="ai-accordion">
       <summary>Privacy check parameters</summary>
       <div class="ai-accordion__body">
@@ -245,7 +245,7 @@
 
   <div class="dp-card" style="margin-top:14px;">
     <h4>Best-Epoch Search</h4>
-    <p style="font-size:12px; color:#64748b; margin:0 0 10px;">Trains once up to a maximum, scoring the model against a held-out split at regular checkpoints, and reports the epoch with the best validation fit. The winning checkpoint is saved as this run's model.</p>
+    <p style="font-size:12px; color:var(--color-text-muted); margin:0 0 10px;">Trains once up to a maximum, scoring the model against a held-out split at regular checkpoints, and reports the epoch with the best validation fit. The winning checkpoint is saved as this run's model.</p>
     <details class="ai-accordion">
       <summary>Epoch search parameters</summary>
       <div class="ai-accordion__body">
@@ -303,20 +303,23 @@
           {% endif %}
         </td>
         <td>
-          <span class="status-badge status-badge--{{ run.status }}">{{ run.status }}</span>
+          <span class="status-badge status-badge--{{ run.status }}" data-status="{{ run.status }}">{{ 'stopping' if run.cancel_requested else run.status }}</span>
           {% if run.status == 'failed' and run.error %}
-          <span class="muted" style="font-size:10px; display:block; margin-top:2px; color:#dc2626;">{{ run.error[:60] }}</span>
+          <span class="muted" style="font-size:10px; display:block; margin-top:2px; color:var(--color-danger);">{{ run.error[:60] }}</span>
           {% endif %}
         </td>
         <td>{{ run.created_at[:16] }}</td>
         <td>
           <div class="row-actions">
             <a href="/diffusion/ui/{{ run.run_id }}" class="btn btn-primary" style="height:28px; padding:0 10px; font-size:11px;">View</a>
+            {% if run.status in ['queued', 'running'] and not run.cancel_requested %}
+            <button type="button" class="btn-sm-danger" data-cancel-url="/diffusion/runs/{{ run.run_id }}/cancel">Stop</button>
+            {% endif %}
           </div>
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="9" style="text-align:center; padding:24px; color:#6b7280;">No runs yet. Configure and start your first job above.</td></tr>
+      <tr><td colspan="9" style="text-align:center; padding:24px; color:var(--color-text-muted);">No runs yet. Configure and start your first job above.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -326,4 +329,5 @@
 
 {% block scripts %}
 <script src="/static/js/diffusion-train.js"></script>
+<script src="/static/js/run-cancel.js"></script>
 {% endblock %}

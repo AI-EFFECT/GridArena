@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+
+{% block head %}
+<link rel="stylesheet" href="/static/css/digital-twin-dashboard.css">
+<link rel="stylesheet" href="/static/css/grid-dashboard.css">
+<link rel="stylesheet" href="/static/css/pf-datagen.css">
+{% endblock %}
+
+{% block content %}
+
+<!-- Header -->
+<div class="panel">
+  <div class="grid-dash-header">
+    <div>
+      <h2>Synthetic Grids</h2>
+      <p>MV feeders generated to go where the stored grids don't: other sizes, several feeders, a second substation, ties. They are stored as ordinary MV grids, so a <a href="/pf-datagen/ui/new">new dataset</a> can use them like any other.</p>
+    </div>
+    <a href="/pf-datagen/ui/new" class="btn btn-primary">New Dataset</a>
+  </div>
+</div>
+
+<!-- Summary cards -->
+<div class="dt-summary">
+  <div class="dt-summary-card">
+    <div class="dt-summary-card__value">{{ synthetic | length }}</div>
+    <div class="dt-summary-card__label">Synthetic grids</div>
+  </div>
+  <div class="dt-summary-card">
+    <div class="dt-summary-card__value">{{ n_stored }}</div>
+    <div class="dt-summary-card__label">Stored grids (calibration)</div>
+  </div>
+</div>
+
+<!-- Generator -->
+<div class="dt-step" id="synthPanel">
+  <div class="dt-step__header">
+    <div class="dt-step__number">+</div>
+    <h4 class="dt-step__title">Generate</h4>
+  </div>
+  <p class="dt-step__desc">Calibrated on the stored grids, by archetype (overhead share of cable length: urban &lt; 10 %, rural &gt; 50 %, mixed between): size, section length, branching, depth, connection points, overhead share and transformer ratings. Each grid passes a planning check: every transformer at 60 % (power factor 0.95), every section within its rating and every node within 5 % of the busbar. Grids are named <code>SYN-&lt;archetype&gt;-NNNN</code>, and a seed reproduces a batch.</p>
+  <div class="field">
+    <label style="min-width:240px;">Archetype, count, seed</label>
+    <select id="synthArchetype" class="input" style="width:150px;">
+      <option value="all" selected>All (stored mix)</option>
+      <option value="urban">Urban</option>
+      <option value="mixed">Mixed</option>
+      <option value="rural">Rural</option>
+    </select>
+    <input id="synthCount" class="input" type="number" value="5" min="1" max="100" style="width:68px;">
+    <input id="synthSeed" class="input" type="number" placeholder="seed" style="width:96px;">
+  </div>
+  <div class="field">
+    <label style="min-width:240px;" title="Beyond the stored grids, which all have one substation and one feeder">Feeders, 2nd substation, ties</label>
+    <input id="synthFeeders" class="input" type="number" value="1" min="1" max="4" style="width:60px;" title="Feeders per substation">
+    <label style="min-width:0;"><input type="checkbox" id="synthSecondSub"> second substation</label>
+    <input id="synthTies" class="input" type="number" value="0" min="0" max="3" style="width:60px;" title="Normally-open ties between feeders">
+  </div>
+  <div class="field">
+    <label style="min-width:240px;" title="Empty: drawn from the archetype's fit">Nodes (min - max)</label>
+    <input id="synthNodesMin" class="input" type="number" min="5" max="500" style="width:76px;">
+    <input id="synthNodesMax" class="input" type="number" min="5" max="500" style="width:76px;">
+  </div>
+  <div class="dt-wizard-nav">
+    <button class="btn" type="button" id="synthDelete" style="color:var(--color-danger);">Delete all synthetic grids</button>
+    <button class="btn btn-primary" type="button" id="synthGenerate">Generate synthetic grids</button>
+  </div>
+  <p class="muted" id="synthMsg" style="margin-top:8px;"></p>
+  <div id="synthReport" style="overflow-x:auto;"></div>
+</div>
+
+<!-- Stored synthetic grids -->
+<div class="panel grids-section">
+  <h3>Synthetic grids</h3>
+  <table class="data-table">
+    <thead><tr><th>Grid</th><th>Name</th><th>Nodes</th><th>Connections</th><th>Connection points</th><th>kV</th></tr></thead>
+    <tbody>
+      {% for g in synthetic %}
+      <tr>
+        <td><a href="/mv_grid/ui/{{ g.mv_grid_id }}"><strong>{{ g.mv_grid_id }}</strong></a></td>
+        <td>{{ g.name or '—' }}</td>
+        <td>{{ g.n_nodes }}</td>
+        <td>{{ g.n_connections }}</td>
+        <td>{{ g.n_cps }}</td>
+        <td>{{ g.nominal_voltage_kv }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" style="text-align:center; padding:24px; color:var(--color-text-muted);">No synthetic grids yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/mv-synthetic.js"></script>
+{% endblock %}

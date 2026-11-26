@@ -7,7 +7,7 @@
 <div id="doc-agent-widget" class="doc-agent-widget doc-agent-widget--collapsed">
   <button id="doc-agent-toggle" class="doc-agent-toggle" type="button" title="Document Assistants"
           data-doc-agent-open style="display:none;">
-    <span class="doc-agent-toggle__icon">&#128218;</span>
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>
   </button>
 
   <div class="chat-panel doc-agent-panel">
@@ -16,9 +16,15 @@
         <option value="">Loading…</option>
       </select>
       <div class="doc-agent-panel__actions">
-        <button type="button" id="doc-agent-delete" class="doc-agent-panel__icon-btn" title="Delete this assistant">&#128465;</button>
-        <a id="doc-agent-fullpage-link" href="/chat/agents/ui" class="doc-agent-panel__icon-btn" title="Open full page">&#8599;</a>
-        <button id="doc-agent-close" class="chat-panel__close" type="button">&times;</button>
+        <button type="button" id="doc-agent-delete" class="doc-agent-panel__icon-btn" title="Delete this assistant" aria-label="Delete this assistant">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+        </button>
+        <a id="doc-agent-fullpage-link" href="/chat/agents/ui" class="doc-agent-panel__icon-btn" title="Open full page" aria-label="Open full page">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3"/></svg>
+        </a>
+        <button id="doc-agent-close" class="chat-panel__close" type="button" aria-label="Close">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
       </div>
     </div>
 
@@ -27,13 +33,15 @@
       <div id="doc-agent-widget-messages" class="chat-panel__messages"></div>
       <form id="doc-agent-widget-form" class="chat-panel__input">
         <input type="text" id="doc-agent-widget-input" placeholder="Ask about these documents..." autocomplete="off">
-        <button class="btn btn-primary" type="submit">Send</button>
+        <button class="chat-send" type="submit" aria-label="Send">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/></svg>
+        </button>
       </form>
     </div>
 
     {# ── Empty state (no assistants yet) ── #}
     <div id="doc-agent-widget-empty" class="doc-agent-widget-view doc-agent-widget-view--scroll" style="display:none;">
-      <p class="muted" style="font-size:12px;">No document assistants yet.</p>
+      <p class="muted">No document assistants yet.</p>
       <button type="button" class="btn btn-primary" id="doc-agent-empty-create">+ New Assistant</button>
     </div>
 

@@ -303,7 +303,7 @@ async def ui_list_grids(request: Request) -> HTMLResponse:
 
     total_nodes = sum(g["n_nodes"] for g in items)
 
-    return templates.TemplateResponse("grid/list.html", {
+    return templates.TemplateResponse(request, "grid/list.html", {
         "request": request,
         "title": "Low Voltage Grids",
         "active": "grid",
@@ -361,7 +361,7 @@ def grid_detail_ui(request: Request, grid_id: str):
     grid_data = {"nodes": nodes, "connections": connections}
     graph_data = _compute_lv_graph_layout(grid_data)
 
-    return templates.TemplateResponse("grid/detail.html", {
+    return templates.TemplateResponse(request, "grid/detail.html", {
         "request": request,
         "title": f"Grid: {html.escape(grid_id)}",
         "active": "grid",

@@ -25,10 +25,10 @@ templates = Jinja2Templates(directory=_TEMPLATES_DIR)
 _AGENT_DESCRIPTIONS = {
     "GridAgent": "Manages electrical network models — register, query, and delete grid topologies (nodes, connections, cables).",
     "HistoricalAgent": "Handles time-series measurement data — upload, retrieve, and delete historical power and voltage records.",
-    "PhaseAgent": "Phase Identification Benchmark — download labelled/anonymised data, submit phase guesses, and evaluate accuracy.",
-    "TopologyAgent": "Topology Discovery Benchmark — reconstruct grid wiring from smart-meter data, submit guesses, and score.",
-    "StateAgent": "State Estimation Benchmark — predict missing voltage values at unobserved nodes, submit estimates, and score.",
-    "VoltageAgent": "Voltage Control Benchmark — propose corrective power adjustments for voltage violations, submit solutions, and score.",
+    "PhaseAgent": "Phase Identification Benchmark — download labelled training data and the submission template, submit a predict() script that is run on the hidden test grids, and check its accuracy.",
+    "TopologyAgent": "Topology Discovery Benchmark — download training grids and the submission template, submit a predict() script that reconstructs the wiring of the hidden test grids, and check its F1 score.",
+    "StateAgent": "State Estimation Benchmark — download training data and the submission template, submit a predict() script that estimates voltages at unobserved nodes on hidden tasks, and check its score.",
+    "VoltageAgent": "Voltage Control Benchmark — download training scenarios and the submission template, submit a predict() script that corrects voltage violations on hidden snapshots, and check its score.",
     "PowerflowAgent": "Runs Newton-Raphson power flow simulations on registered grids and retrieves computed voltages.",
 }
 
@@ -97,7 +97,7 @@ async def get_chat_config():
 
 @router.get("/ui", response_class=HTMLResponse, include_in_schema=False)
 async def chat_page(request: Request):
-    return templates.TemplateResponse("chat/page.html", {
+    return templates.TemplateResponse(request, "chat/page.html", {
         "request": request,
         "title": "Chat Assistant",
         "active": "chat",
@@ -108,7 +108,7 @@ async def chat_page(request: Request):
 async def chat_config_page(request: Request):
     """Configuration overview page for the Chat Assistant."""
     data = _build_agent_config()
-    return templates.TemplateResponse("chat/config.html", {
+    return templates.TemplateResponse(request, "chat/config.html", {
         "request": request,
         "title": "Chat Assistant Configuration",
         "active": "chat_config",
@@ -137,12 +137,12 @@ async def chat_websocket(websocket: WebSocket):
                         "content": response,
                     })
                 except RuntimeError as e:
-                    if "LLM_API_KEY is not configured" in str(e):
-                        logger.warning("Chat used with no LLM_API_KEY configured")
+                    if str(e).endswith(" is not configured"):
+                        logger.warning("Chat used with %s", e)
                         await websocket.send_json({
                             "type": "error",
                             "content": "The chat assistant is not configured on this server "
-                                        "(missing LLM_API_KEY). Contact an administrator.",
+                                        f"(missing {str(e).split()[0]}). Contact an administrator.",
                         })
                     else:
                         logger.error("Chat error: %s", e, exc_info=True)
@@ -241,7 +241,7 @@ async def document_agent_page(request: Request, agent_id: str | None = Query(Non
         if agent is None:
             raise HTTPException(status_code=404, detail="No such document agent.")
 
-    return templates.TemplateResponse("chat/agent_page.html", {
+    return templates.TemplateResponse(request, "chat/agent_page.html", {
         "request": request,
         "title": agent["name"] if agent else "Document Assistants",
         "active": "chat",
@@ -353,11 +353,11 @@ async def document_chat_websocket(websocket: WebSocket, agent_id: str):
                         "citations": result["citations"],
                     })
                 except RuntimeError as e:
-                    if "LLM_API_KEY is not configured" in str(e):
+                    if str(e).endswith(" is not configured"):
                         await websocket.send_json({
                             "type": "error",
                             "content": "The chat assistant is not configured on this server "
-                                        "(missing LLM_API_KEY). Contact an administrator.",
+                                        f"(missing {str(e).split()[0]}). Contact an administrator.",
                         })
                     else:
                         logger.error("Document chat error: %s", e, exc_info=True)
@@ -405,7 +405,7 @@ async def get_document_source_view(request: Request, agent_id: str, source_id: s
     title = source_meta["title"] if source_meta else path.name
 
     body_html = render.render_markdown_with_anchors(path.read_text(encoding="utf-8"))
-    return templates.TemplateResponse("chat/source_view.html", {
+    return templates.TemplateResponse(request, "chat/source_view.html", {
         "request": request,
         "title": title,
         "active": "chat",

@@ -42,7 +42,7 @@ async def test_upload_database_unit(mock_get_conn, mock_create_db, mock_insert_d
 
     assert "db123" in result["message"]
     assert "inserted successfully" in result["message"]
-    mock_create_db.assert_called_once_with(mock_cursor)
+    mock_create_db.assert_not_called()   # tables are created at startup, not per request
     mock_insert_db.assert_called_once()
     mock_conn.close.assert_called_once()
 
@@ -174,7 +174,7 @@ async def test_delete_database_success(mock_get_conn):
     mock_cursor.rowcount = 1
     mock_get_conn.return_value = (mock_conn, mock_cursor)
 
-    result = await hist_router.delete_historical_database("db_ok")
+    result = hist_router.delete_historical_database("db_ok")
     assert result == {"message": "1 database(s) deleted for 'db_ok'."}
     mock_cursor.execute.assert_called_once()
     mock_conn.commit.assert_called_once()
@@ -189,7 +189,7 @@ async def test_delete_series_records_success(mock_get_conn):
     mock_cursor.rowcount = 3
     mock_get_conn.return_value = (mock_conn, mock_cursor)
 
-    result = await hist_router.delete_historical_series_records("db_ok", "s1", start=None, end=None)
+    result = hist_router.delete_historical_series_records("db_ok", "s1", start=None, end=None)
     assert result == {"message": "3 record(s) deleted for series 's1' in database 'db_ok'."}
     mock_cursor.execute.assert_called_once()
     mock_conn.commit.assert_called_once()
@@ -199,7 +199,7 @@ async def test_delete_series_records_success(mock_get_conn):
 @pytest.mark.asyncio
 async def test_delete_series_records_invalid_datetime():
     with pytest.raises(HTTPException) as exc:
-        await hist_router.delete_historical_series_records("db_bad", "s1", start="bad_date")
+        hist_router.delete_historical_series_records("db_bad", "s1", start="bad_date")
     assert exc.value.status_code == 400
     assert "Invalid datetime format" in exc.value.detail
 
@@ -214,7 +214,7 @@ async def test_delete_series_records_with_filters(mock_get_conn):
 
     start = datetime(2025, 1, 1).isoformat()
     end = datetime(2025, 1, 2).isoformat()
-    result = await hist_router.delete_historical_series_records(
+    result = hist_router.delete_historical_series_records(
         "db_filters", "s1", phase="R", start=start, end=end
     )
 
@@ -233,11 +233,117 @@ async def test_delete_series_records_db_error(mock_get_conn):
     mock_get_conn.return_value = (mock_conn, mock_cursor)
 
     with pytest.raises(HTTPException) as exc:
-        await hist_router.delete_historical_series_records("db_fail", "s1", start=None, end=None)
+        hist_router.delete_historical_series_records("db_fail", "s1", start=None, end=None)
     assert exc.value.status_code == 500
     assert "Database error" in exc.value.detail
     mock_conn.rollback.assert_called_once()
     mock_conn.close.assert_called_once()
+
+
+@pytest.mark.asyncio
+@patch("gridarena.database.get_db_connection")
+async def test_list_databases_never_scans_records(mock_get_conn):
+    """The PF picker loads this when the MV Grids page opens; counting
+    HistoricalRecords took ~90 s and froze the server, so record counts come
+    from the stored per-series counts and the records table isn't queried."""
+    mock_conn, mock_cursor = MagicMock(), MagicMock()
+    mock_cursor.fetchall.return_value = [
+        ("db1", "Feeder 2024", "load", 40, 0, 0, 40, 41862017, 1052640, datetime(2023, 3, 31, 22),
+         datetime(2025, 3, 31, 21, 59)),
+        ("db2", None, "pv", 0, 0, 0, 0, 0, 0, None, None),
+    ]
+    mock_get_conn.return_value = (mock_conn, mock_cursor)
+
+    items = hist_router.list_historical_databases()
+
+    sql = " ".join(str(c.args[0]) for c in mock_cursor.execute.call_args_list)
+    assert '"HistoricalRecords"' not in sql
+    assert items[0] == {"database_id": "db1", "name": "Feeder 2024", "data_type": "load", "n_series": 40,
+                        "n_mv": 0, "n_lv": 0, "n_feeder": 40, "n_records": 41862017, "n_timestamps": 1052640,
+                        "first_ts": "2023-03-31 22:00", "last_ts": "2025-03-31 21:59", "grid_level": "Feeder"}
+    assert items[1]["grid_level"] == "Empty" and items[1]["first_ts"] is None
+    assert items[1]["data_type"] == "pv"
+    mock_conn.close.assert_called_once()
+
+
+# ---------------------------------------------------------------------
+# data_type: "load" (default) or "pv" (solar PV production)
+# ---------------------------------------------------------------------
+_PV_DB = {
+    "database_id": "pv_unit",
+    "timestamps": ["2025-06-01T12:00:00"],
+    "historicals": [
+        {"series_id": "pv1", "grid_level": "LV", "values": [
+            {"datetime": "2025-06-01T12:00:00", "power_active": 3500.0}
+        ]}
+    ],
+}
+
+
+def test_upload_schema_data_type_defaults_to_load_and_accepts_known_types_only():
+    from pydantic import ValidationError
+    from gridarena.schemas import HistoricalDatabaseUpload
+    assert HistoricalDatabaseUpload(**_PV_DB).data_type == "load"
+    assert HistoricalDatabaseUpload(**_PV_DB, data_type="pv").data_type == "pv"
+    with pytest.raises(ValidationError):
+        HistoricalDatabaseUpload(**_PV_DB, data_type="nuclear")
+
+
+@pytest.mark.asyncio
+@patch("gridarena.database.insert_historical_data")
+@patch("gridarena.database.get_db_connection")
+async def test_upload_data_type_field_sets_the_type(mock_get_conn, mock_insert):
+    mock_get_conn.return_value = (MagicMock(), MagicMock())
+    result = await upload_historical_database(_make_upload(_PV_DB), data_type="pv")
+    assert mock_insert.call_args[0][0].data_type == "pv"
+    assert "solar PV production" in result["message"]
+
+
+@pytest.mark.asyncio
+@patch("gridarena.database.insert_historical_data")
+@patch("gridarena.database.get_db_connection")
+async def test_upload_data_type_field_must_match_the_file(mock_get_conn, mock_insert):
+    mock_get_conn.return_value = (MagicMock(), MagicMock())
+    with pytest.raises(HTTPException) as exc:
+        await upload_historical_database(_make_upload({**_PV_DB, "data_type": "load"}), data_type="pv")
+    assert exc.value.status_code == 422
+    mock_insert.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch("gridarena.database.get_db_connection")
+async def test_upload_into_a_database_of_another_type_is_a_conflict(mock_get_conn):
+    from gridarena.database.insert_historical_database import HistoricalDataTypeConflict
+    mock_conn = MagicMock()
+    mock_get_conn.return_value = (mock_conn, MagicMock())
+    with patch("gridarena.database.insert_historical_data",
+               side_effect=HistoricalDataTypeConflict("exists with data_type 'load'")):
+        with pytest.raises(HTTPException) as exc:
+            await upload_historical_database(_make_upload({**_PV_DB, "data_type": "pv"}))
+    assert exc.value.status_code == 409
+    mock_conn.close.assert_called_once()
+
+
+def test_insert_refuses_a_different_data_type_and_writes_nothing():
+    from gridarena.database.insert_historical_database import (
+        HistoricalDataTypeConflict, insert_historical_data,
+    )
+    from gridarena.schemas import HistoricalDatabaseUpload
+    conn, cursor = MagicMock(), MagicMock()
+    cursor.fetchone.return_value = ("load",)
+    with pytest.raises(HistoricalDataTypeConflict):
+        insert_historical_data(HistoricalDatabaseUpload(**_PV_DB, data_type="pv"), conn, cursor)
+    assert cursor.execute.call_count == 1          # only the type lookup
+    conn.rollback.assert_called_once()
+    conn.commit.assert_not_called()
+
+
+def test_pf_datagen_refuses_a_pv_database_as_load_source():
+    from gridarena.pf_datagen.scenario_builder import get_historical_source_type
+    cursor = MagicMock()
+    cursor.fetchone.return_value = ("pv",)
+    with pytest.raises(Exception, match="generation data"):
+        get_historical_source_type("pv_db", cursor)
 
 
 ################################################# INTEGRATION TESTS #####################################################
@@ -531,3 +637,101 @@ def test_ui_series_page_404_for_missing_series():
     prepare_example_database()
     response = client.get(f"{HIST_PREFIX}/ui/{DATABASE_ID}/no_such_series_for_ui")
     assert response.status_code == 404
+
+
+# ----------------------------
+# Solar PV production databases (data_type "pv")
+# ----------------------------
+
+PV_DATABASE_ID = "test_db_pv_001"
+PV_DATABASE = {
+    "database_id": PV_DATABASE_ID,
+    "name": "Rooftop PV",
+    "timestamps": TIMESTAMPS,
+    "historicals": [
+        {
+            "series_id": "pv_plant_1",
+            "grid_level": "LV",
+            "values": [
+                {"datetime": TIMESTAMPS[0], "power_active": 0.0},
+                {"datetime": TIMESTAMPS[1], "power_active": 2400.0},
+                {"datetime": TIMESTAMPS[2], "power_active": -3.5},   # inverter standby draw is accepted
+            ],
+        },
+    ],
+}
+
+
+def _post(payload, **form):
+    file_bytes = io.BytesIO(json.dumps(payload).encode("utf-8"))
+    return client.post(f"{HIST_PREFIX}/", files={"file": ("db.json", file_bytes, "application/json")}, data=form)
+
+
+def test_pv_database_upload_is_identified_everywhere():
+    reset_database_data(PV_DATABASE_ID)
+    response = _post(PV_DATABASE, data_type="pv")
+    assert response.status_code == 200, response.text
+    assert "solar PV production" in response.json()["message"]
+
+    listed = {d["database_id"]: d for d in client.get(f"{HIST_PREFIX}/databases").json()}
+    assert listed[PV_DATABASE_ID]["data_type"] == "pv"
+    assert listed[PV_DATABASE_ID]["grid_level"] == "LV"        # same structure as any other database
+
+    data = client.get(f"{HIST_PREFIX}/data/{PV_DATABASE_ID}/pv_plant_1").json()
+    assert data["data_type"] == "pv" and data["count"] == 3
+
+    assert "badge--pv" in client.get(f"{HIST_PREFIX}/ui").text
+    assert "badge--pv" in client.get(f"{HIST_PREFIX}/ui/{PV_DATABASE_ID}").text
+    series_page = client.get(f"{HIST_PREFIX}/ui/{PV_DATABASE_ID}/pv_plant_1").text
+    assert "badge--pv" in series_page and "Solar PV production" in series_page
+    reset_database_data(PV_DATABASE_ID)
+
+
+def test_pv_type_can_come_from_the_file():
+    reset_database_data(PV_DATABASE_ID)
+    assert _post({**PV_DATABASE, "data_type": "pv"}).status_code == 200
+    listed = {d["database_id"]: d for d in client.get(f"{HIST_PREFIX}/databases").json()}
+    assert listed[PV_DATABASE_ID]["data_type"] == "pv"
+    reset_database_data(PV_DATABASE_ID)
+
+
+def test_existing_databases_default_to_load():
+    prepare_example_database()
+    listed = {d["database_id"]: d for d in client.get(f"{HIST_PREFIX}/databases").json()}
+    assert listed[DATABASE_ID]["data_type"] == "load"
+
+
+def test_reupload_with_another_type_is_refused_and_keeps_the_database():
+    reset_database_data(PV_DATABASE_ID)
+    assert _post(PV_DATABASE, data_type="pv").status_code == 200
+    response = _post(PV_DATABASE, data_type="load")
+    assert response.status_code == 409, response.text
+    listed = {d["database_id"]: d for d in client.get(f"{HIST_PREFIX}/databases").json()}
+    assert listed[PV_DATABASE_ID]["data_type"] == "pv"
+    assert _post(PV_DATABASE, data_type="pv").status_code == 200     # same type: re-upload still merges
+    reset_database_data(PV_DATABASE_ID)
+
+
+def test_unknown_data_type_is_rejected():
+    response = _post(PV_DATABASE, data_type="nuclear")
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("data_type, title", [("wind", "Wind production"), ("injection_total",
+                                                                              "Total generation injected")])
+def test_other_generation_types_are_identified(data_type, title):
+    reset_database_data(PV_DATABASE_ID)
+    assert _post(PV_DATABASE, data_type=data_type).status_code == 200
+    listed = {d["database_id"]: d for d in client.get(f"{HIST_PREFIX}/databases").json()}
+    assert listed[PV_DATABASE_ID]["data_type"] == data_type
+    assert f"badge--{data_type}" in client.get(f"{HIST_PREFIX}/ui/{PV_DATABASE_ID}").text
+    assert title in client.get(f"{HIST_PREFIX}/ui/{PV_DATABASE_ID}/pv_plant_1").text
+    reset_database_data(PV_DATABASE_ID)
+
+
+def test_pf_datagen_refuses_any_generation_database():
+    from gridarena.pf_datagen.scenario_builder import get_historical_source_type
+    cursor = MagicMock()
+    cursor.fetchone.return_value = ("wind",)
+    with pytest.raises(Exception, match="generation data"):
+        get_historical_source_type("wind_db", cursor)

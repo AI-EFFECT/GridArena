@@ -5,10 +5,11 @@
 <style>
   .doc-source-view { max-width: 780px; margin: 0 auto; line-height: 1.6; }
   .doc-source-view h1, .doc-source-view h2, .doc-source-view h3,
-  .doc-source-view h4, .doc-source-view h5, .doc-source-view h6 { scroll-margin-top: 16px; }
+  .doc-source-view h4, .doc-source-view h5, .doc-source-view h6 { scroll-margin-top: calc(var(--navbar-h) + 16px); }
   .doc-source-view h1:target, .doc-source-view h2:target, .doc-source-view h3:target,
   .doc-source-view h4:target, .doc-source-view h5:target, .doc-source-view h6:target {
-    background: #fef9c3;
+    background: color-mix(in srgb, var(--color-warning) 18%, transparent);
+    border-radius: 4px;
   }
 </style>
 {% endblock %}

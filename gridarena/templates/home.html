@@ -4,132 +4,146 @@
 <link rel="stylesheet" href="/static/css/home.css">
 {% endblock %}
 
+{% block page_class %}home-page{% endblock %}
+
 {% block content %}
-<canvas id="gridBg" class="home-bg"></canvas>
-
-<div class="home-header">
-  <h1>GridArena</h1>
-  <p>Simulation-based environment for Low and Medium Voltage Grid management</p>
-</div>
-
-<div class="home-stats">
-  <div class="home-stat">
-    <div class="home-stat__value">{{ stats.n_lv_grids }}</div>
-    <div class="home-stat__label">LV Grids Modeled</div>
-  </div>
-  <div class="home-stat">
-    <div class="home-stat__value">{{ stats.n_mv_grids }}</div>
-    <div class="home-stat__label">MV Grids Modeled</div>
-  </div>
-  <div class="home-stat">
-    <div class="home-stat__value">{{ stats.n_historical_databases }}</div>
-    <div class="home-stat__label">Historical Databases</div>
-  </div>
-  <div class="home-stat">
-    <div class="home-stat__value">{{ stats.n_active_runs }}</div>
-    <div class="home-stat__label">Active Runs</div>
-  </div>
-</div>
-
-<div class="macro-cards">
-
-  <div class="macro-card">
-    <div class="macro-card__icon">&#9881;</div>
-    <h2 class="macro-card__title">Database</h2>
-    <p class="macro-card__desc">Insert, manage, and simulate electrical grid data.</p>
-    <div class="macro-card__links">
-      <a href="/grid/ui">
-        <strong>LV Grids</strong>
-        <span>Upload and manage low-voltage grid topologies</span>
+<section class="hero">
+  <canvas id="heroParticles" class="hero-canvas" aria-hidden="true"></canvas>
+  <div class="hero-body">
+    <div class="hero-eyebrow"><span class="mono-label">INESC TEC · AI-EFFECT</span></div>
+    <h1 class="hero-title">Grid<span class="hero-accent">Arena</span></h1>
+    <p class="hero-lead">
+      A simulation-based environment for low and medium voltage grids — manage grid data,
+      run power flow, operate live digital twins and benchmark AI methods on a shared grid model.
+    </p>
+    <div class="hero-actions">
+      <a class="btn-hero-primary" href="/grid/ui">
+        Explore Grids
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
       </a>
-      <a href="/mv_grid/ui">
-        <strong>MV Grids</strong>
-        <span>Upload MV networks and connect LV grids via transformers</span>
-      </a>
-      <a href="/measurements/ui">
-        <strong>Measurements</strong>
-        <span>Upload, filter, and visualise time-series measurements</span>
-      </a>
-      <a href="/historical/ui">
-        <strong>Historical</strong>
-        <span>Browse standalone MV/LV power &amp; voltage series</span>
-      </a>
-      <a href="/powerflow/ui">
-        <strong>Power Flow</strong>
-        <span>Run power flow simulations and inspect voltage profiles</span>
-      </a>
+      <a class="btn-hero-secondary" href="/phase_identification_benchmark/ui">Use Cases</a>
     </div>
   </div>
+</section>
 
-  <div class="macro-card">
-    <div class="macro-card__icon">&#9879;</div>
-    <h2 class="macro-card__title">Use Cases</h2>
-    <p class="macro-card__desc">Testbed for benchmarking algorithms on LV grids.</p>
-    <div class="macro-card__links">
-      <a href="/phase_identification_benchmark/ui">
-        <strong>Phase Mapping</strong>
-        <span>Identify electrical phases from anonymised measurements</span>
-      </a>
-      <a href="/topology_discovery_benchmark/ui">
-        <strong>Topology Discovery</strong>
-        <span>Reconstruct grid connections from measurement data</span>
-      </a>
-      <a href="/state_estimation_benchmark/ui">
-        <strong>State Estimation</strong>
-        <span>Estimate voltages at unobserved nodes</span>
-      </a>
-      <a href="/voltage_control_benchmark/ui">
-        <strong>Voltage Control</strong>
-        <span>Optimise power injections to resolve voltage violations</span>
-      </a>
-    </div>
+<section class="stat-strip">
+  <div class="stat-item">
+    <strong>{{ stats.n_lv_grids }}</strong>
+    <span class="mono-label">LV Grids</span>
+  </div>
+  <div class="stat-item">
+    <strong>{{ stats.n_mv_grids }}</strong>
+    <span class="mono-label">MV Grids</span>
+  </div>
+  <div class="stat-item">
+    <strong>{{ stats.n_historical_databases }}</strong>
+    <span class="mono-label">Historical Databases</span>
+  </div>
+  <div class="stat-item">
+    <strong>{{ stats.n_active_runs }}</strong>
+    <span class="mono-label">Active Runs</span>
+  </div>
+</section>
+
+<section class="home-section">
+  <div class="section-header">
+    <span class="section-title">Platform</span>
+    <div class="section-line"></div>
   </div>
 
-  <div class="macro-card">
-    <div class="macro-card__icon">&#128268;</div>
-    <h2 class="macro-card__title">Digital Twin</h2>
-    <p class="macro-card__desc">Real-time grid replicas fed by external data sources.</p>
-    <div class="macro-card__links">
-      <a href="/digital-twins/ui">
-        <strong>Overview</strong>
-        <span>Monitor and manage running digital twins</span>
-      </a>
-      <a href="/digital-twins/ui/new">
-        <strong>New Twin</strong>
-        <span>Configure a new twin with source mapping and power flow</span>
-      </a>
-      <a href="/offline-scenarios/ui">
-        <strong>Scenarios</strong>
-        <span>Clone twins and run what-if analyses across the time series</span>
-      </a>
-    </div>
-  </div>
+  <div class="area-grid">
 
-  <div class="macro-card">
-    <div class="macro-card__icon">&#10024;</div>
-    <h2 class="macro-card__title">AI Tools</h2>
-    <p class="macro-card__desc">Machine learning workflows for grid intelligence.</p>
-    <div class="macro-card__links">
-      <a href="/rl/ui">
-        <strong>RL Training</strong>
-        <span>Train reinforcement learning agents for voltage control</span>
-      </a>
-      <a href="/diffusion/ui">
-        <strong>Diffusion Models</strong>
-        <span>Generate synthetic power data with DDPM models</span>
-      </a>
-      <a href="/chat/ui">
-        <strong>Chat Assistant</strong>
-        <span>Query grids and run tools via natural language</span>
-      </a>
-      <a href="/chat/ui/config">
-        <strong>LLM Config</strong>
-        <span>Inspect and manage the LLM agents and their tools</span>
-      </a>
-    </div>
-  </div>
+    <article class="area-card">
+      <div class="area-card__top">
+        <div class="service-icon">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></svg>
+        </div>
+        <div>
+          <h3 class="area-card__title">Database</h3>
+          <p class="area-card__desc">Insert, manage, and simulate electrical grid data.</p>
+        </div>
+      </div>
+      <div class="area-card__links">
+        <a href="/grid/ui"><strong>LV Grids</strong><span>Upload and manage low-voltage grid topologies</span></a>
+        <a href="/mv_grid/ui"><strong>MV Grids</strong><span>Upload MV networks and connect LV grids via transformers</span></a>
+        <a href="/measurements/ui"><strong>Measurements</strong><span>Upload, filter, and visualise time-series measurements</span></a>
+        <a href="/historical/ui"><strong>Historical</strong><span>Browse standalone MV/LV power &amp; voltage series</span></a>
+        <a href="/powerflow/ui"><strong>Power Flow</strong><span>Run power flow simulations and inspect voltage profiles</span></a>
+      </div>
+    </article>
 
-</div>
+    <article class="area-card">
+      <div class="area-card__top">
+        <div class="service-icon">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2v7.527a2 2 0 0 1-.211.896L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45l-5.069-10.127A2 2 0 0 1 14 9.527V2"/><path d="M8.5 2h7"/><path d="M7 16h10"/></svg>
+        </div>
+        <div>
+          <h3 class="area-card__title">Use Cases</h3>
+          <p class="area-card__desc">Testbed for benchmarking algorithms on LV grids.</p>
+        </div>
+      </div>
+      <div class="area-card__links">
+        <a href="/phase_identification_benchmark/ui"><strong>Phase Mapping</strong><span>Identify electrical phases from anonymised measurements</span></a>
+        <a href="/topology_discovery_benchmark/ui"><strong>Topology Discovery</strong><span>Reconstruct grid connections from measurement data</span></a>
+        <a href="/state_estimation_benchmark/ui"><strong>State Estimation</strong><span>Estimate voltages at unobserved nodes</span></a>
+        <a href="/voltage_control_benchmark/ui"><strong>Voltage Control</strong><span>Optimise power injections to resolve voltage violations</span></a>
+      </div>
+    </article>
+
+    <article class="area-card">
+      <div class="area-card__top">
+        <div class="service-icon">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></svg>
+        </div>
+        <div>
+          <h3 class="area-card__title">Digital Twin</h3>
+          <p class="area-card__desc">Real-time grid replicas fed by external data sources.</p>
+        </div>
+      </div>
+      <div class="area-card__links">
+        <a href="/digital-twins/ui"><strong>Overview</strong><span>Monitor and manage running digital twins</span></a>
+        <a href="/digital-twins/ui/new"><strong>New Twin</strong><span>Configure a new twin with source mapping and power flow</span></a>
+        <a href="/offline-scenarios/ui"><strong>Scenarios</strong><span>Clone twins and run what-if analyses across the time series</span></a>
+      </div>
+    </article>
+
+    <article class="area-card">
+      <div class="area-card__top">
+        <div class="service-icon">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg>
+        </div>
+        <div>
+          <h3 class="area-card__title">Synthetic Data</h3>
+          <p class="area-card__desc">Power-flow training datasets and synthetic grids for MV networks.</p>
+        </div>
+      </div>
+      <div class="area-card__links">
+        <a href="/pf-datagen/ui"><strong>Overview</strong><span>Follow dataset runs and groups, open their reports and exports</span></a>
+        <a href="/pf-datagen/ui/new"><strong>New Dataset</strong><span>Set up load, DER, topology, design and measurements step by step</span></a>
+        <a href="/pf-datagen/ui/synthetic-grids"><strong>Synthetic Grids</strong><span>Generate MV feeders calibrated on the stored grids</span></a>
+      </div>
+    </article>
+
+    <article class="area-card">
+      <div class="area-card__top">
+        <div class="service-icon">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>
+        </div>
+        <div>
+          <h3 class="area-card__title">AI Tools</h3>
+          <p class="area-card__desc">Machine learning workflows for grid intelligence.</p>
+        </div>
+      </div>
+      <div class="area-card__links">
+        <a href="/rl/ui"><strong>RL Training</strong><span>Train reinforcement learning agents for voltage control</span></a>
+        <a href="/diffusion/ui"><strong>Diffusion Models</strong><span>Generate synthetic power data with DDPM models</span></a>
+        <a href="/chat/ui"><strong>Chat Assistant</strong><span>Query grids and run tools via natural language</span></a>
+        <a href="/chat/ui/config"><strong>LLM Config</strong><span>Inspect and manage the LLM agents and their tools</span></a>
+      </div>
+    </article>
+
+  </div>
+</section>
 {% endblock %}
 
 {% block scripts %}

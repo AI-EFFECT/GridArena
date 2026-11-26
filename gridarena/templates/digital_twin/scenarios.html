@@ -61,12 +61,12 @@
         <td>
           <div class="row-actions">
             <a href="/offline-scenarios/ui/{{ s.scenario_id }}" class="btn btn-primary" style="height:28px; padding:0 10px; font-size:11px;">View</a>
-            <button class="btn" style="height:28px; padding:0 10px; font-size:11px; color:#dc2626;" onclick="deleteScenario('{{ s.scenario_id }}')">Delete</button>
+            <button class="btn" style="height:28px; padding:0 10px; font-size:11px; color:var(--color-danger);" onclick="deleteScenario('{{ s.scenario_id }}')">Delete</button>
           </div>
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="8" style="text-align:center; padding:24px; color:#6b7280;">No scenarios yet. Clone one from a digital twin's detail page.</td></tr>
+      <tr><td colspan="8" style="text-align:center; padding:24px; color:var(--color-text-muted);">No scenarios yet. Clone one from a digital twin's detail page.</td></tr>
       {% endfor %}
     </tbody>
   </table>

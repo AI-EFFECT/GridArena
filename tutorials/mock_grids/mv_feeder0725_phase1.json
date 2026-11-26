@@ -1,0 +1,541 @@
+{
+  "mv_grid_id": "11_MVFeeder0725_P1",
+  "name": "11_MVFeeder0725 with Phase 1 elements",
+  "description": "11_MVFeeder0725's topology plus every MV element type: a second feeder and substation, two normally-open tie lines, a closed sectionalising switch, an out-of-service cable, transformer taps, a voltage regulator, a capacitor bank, a reactor and six DER.",
+  "nominal_voltage_kv": 20.0,
+  "region": "Ile-de-France",
+  "nodes": [
+    {
+      "node_id": "11_BUZEN",
+      "coord_lat": 48.8506628079483,
+      "coord_lon": 2.198909255890568,
+      "node_type": "substation"
+    },
+    {
+      "node_id": "11_MVBus11314",
+      "coord_lat": 48.842411284643994,
+      "coord_lon": 2.147823693772756,
+      "node_type": "junction"
+    },
+    {
+      "node_id": "11_MVLV14683",
+      "coord_lat": 48.84766524851722,
+      "coord_lon": 2.176080476696749,
+      "node_type": "junction"
+    },
+    {
+      "node_id": "11_MVLV14690",
+      "coord_lat": 48.84702249313819,
+      "coord_lon": 2.169363770756837,
+      "node_type": "connection_point"
+    },
+    {
+      "node_id": "11_MVLV16194",
+      "coord_lat": 48.85195197272717,
+      "coord_lon": 2.188358320973178,
+      "node_type": "connection_point"
+    },
+    {
+      "node_id": "11_MVLV22874",
+      "coord_lat": 48.849483404601564,
+      "coord_lon": 2.183787068558174,
+      "node_type": "connection_point"
+    },
+    {
+      "node_id": "11_MVLV23213",
+      "coord_lat": 48.84711923972402,
+      "coord_lon": 2.184489259040943,
+      "node_type": "connection_point"
+    },
+    {
+      "node_id": "11_MVLV35159",
+      "coord_lat": 48.840023913175784,
+      "coord_lon": 2.172961490613648,
+      "node_type": "connection_point"
+    },
+    {
+      "node_id": "11_MVLV36338",
+      "coord_lat": 48.84923416214041,
+      "coord_lon": 2.187070393699815,
+      "node_type": "connection_point"
+    },
+    {
+      "node_id": "11_MVLV52721",
+      "coord_lat": 48.84192082926142,
+      "coord_lon": 2.162750709757285,
+      "node_type": "junction"
+    },
+    {
+      "node_id": "11_MVLV66105",
+      "coord_lat": 48.85222687478263,
+      "coord_lon": 2.191164462427172,
+      "node_type": "connection_point"
+    },
+    {
+      "node_id": "11_MVLV66984",
+      "coord_lat": 48.84131553751495,
+      "coord_lon": 2.157449687888806,
+      "node_type": "connection_point"
+    },
+    {
+      "node_id": "11_MVLV73455",
+      "coord_lat": 48.84092470117095,
+      "coord_lon": 2.153388812784379,
+      "node_type": "connection_point"
+    },
+    {
+      "node_id": "11_MVLV73493",
+      "coord_lat": 48.8466826735203,
+      "coord_lon": 2.180852585479148,
+      "node_type": "connection_point"
+    },
+    {
+      "node_id": "11_SUB2",
+      "coord_lat": 48.8352,
+      "coord_lon": 2.156,
+      "node_type": "substation"
+    },
+    {
+      "node_id": "11_MVB_N1",
+      "coord_lat": 48.8372,
+      "coord_lon": 2.1612,
+      "node_type": "junction"
+    },
+    {
+      "node_id": "11_MVB_CP1",
+      "coord_lat": 48.8362,
+      "coord_lon": 2.169,
+      "node_type": "connection_point"
+    },
+    {
+      "node_id": "11_MVB_CP2",
+      "coord_lat": 48.8372,
+      "coord_lon": 2.149,
+      "node_type": "connection_point"
+    }
+  ],
+  "cables": [
+    {
+      "cable_id": "CBL_240AL",
+      "imp_real": 0.206,
+      "imp_imag": 0.0960502777,
+      "nom_curr": 325.0,
+      "cap_uf_per_km": 0.109,
+      "emerg_curr": 390.0
+    },
+    {
+      "cable_id": "CBL_150CU",
+      "imp_real": 0.125,
+      "imp_imag": 0.098,
+      "nom_curr": 300.0,
+      "cap_uf_per_km": 0.31,
+      "emerg_curr": 360.0
+    }
+  ],
+  "connections": [
+    {
+      "connection_id": "11_104041",
+      "from_node_id": "11_MVLV73455",
+      "to_node_id": "11_MVBus11314",
+      "cable_id": "CBL_240AL",
+      "length": 645.7
+    },
+    {
+      "connection_id": "11_127203",
+      "from_node_id": "11_MVLV35159",
+      "to_node_id": "11_MVLV52721",
+      "cable_id": "CBL_240AL",
+      "length": 1006.8
+    },
+    {
+      "connection_id": "11_197564",
+      "from_node_id": "11_MVLV66984",
+      "to_node_id": "11_MVLV73455",
+      "cable_id": "CBL_240AL",
+      "length": 660.9
+    },
+    {
+      "connection_id": "11_213607",
+      "from_node_id": "11_BUZEN",
+      "to_node_id": "11_MVLV66105",
+      "cable_id": "CBL_240AL",
+      "length": 769.9
+    },
+    {
+      "connection_id": "11_230212",
+      "from_node_id": "11_MVLV23213",
+      "to_node_id": "11_MVLV73493",
+      "cable_id": "CBL_240AL",
+      "length": 482.1
+    },
+    {
+      "connection_id": "11_253755",
+      "from_node_id": "11_MVLV66105",
+      "to_node_id": "11_MVLV16194",
+      "cable_id": "CBL_240AL",
+      "length": 487.2
+    },
+    {
+      "connection_id": "11_262794",
+      "from_node_id": "11_MVLV22874",
+      "to_node_id": "11_MVLV23213",
+      "cable_id": "CBL_240AL",
+      "length": 485.7
+    },
+    {
+      "connection_id": "11_262795",
+      "from_node_id": "11_MVLV16194",
+      "to_node_id": "11_MVLV36338",
+      "cable_id": "CBL_240AL",
+      "length": 595.7
+    },
+    {
+      "connection_id": "11_300364",
+      "from_node_id": "11_MVLV73493",
+      "to_node_id": "11_MVLV35159",
+      "cable_id": "CBL_240AL",
+      "length": 1209.1
+    },
+    {
+      "connection_id": "11_302825",
+      "from_node_id": "11_MVLV73493",
+      "to_node_id": "11_MVLV14683",
+      "cable_id": "CBL_240AL",
+      "length": 441.9,
+      "is_switch": true
+    },
+    {
+      "connection_id": "11_50309",
+      "from_node_id": "11_MVLV14683",
+      "to_node_id": "11_MVLV14690",
+      "cable_id": "CBL_240AL",
+      "length": 640.0
+    },
+    {
+      "connection_id": "11_52553",
+      "from_node_id": "11_MVLV36338",
+      "to_node_id": "11_MVLV22874",
+      "cable_id": "CBL_240AL",
+      "length": 384.9
+    },
+    {
+      "connection_id": "11_76020",
+      "from_node_id": "11_MVLV52721",
+      "to_node_id": "11_MVLV66984",
+      "cable_id": "CBL_240AL",
+      "length": 518.0
+    },
+    {
+      "connection_id": "11_B01",
+      "from_node_id": "11_SUB2",
+      "to_node_id": "11_MVB_N1",
+      "cable_id": "CBL_150CU",
+      "length": 450.0
+    },
+    {
+      "connection_id": "11_B02",
+      "from_node_id": "11_MVB_N1",
+      "to_node_id": "11_MVB_CP1",
+      "cable_id": "CBL_150CU",
+      "length": 590.0
+    },
+    {
+      "connection_id": "11_B03",
+      "from_node_id": "11_MVB_N1",
+      "to_node_id": "11_MVB_CP2",
+      "cable_id": "CBL_150CU",
+      "length": 890.0
+    },
+    {
+      "connection_id": "11_TIE01",
+      "from_node_id": "11_MVB_CP2",
+      "to_node_id": "11_MVBus11314",
+      "cable_id": "CBL_240AL",
+      "length": 590.0,
+      "is_switch": true,
+      "normally_open": true
+    },
+    {
+      "connection_id": "11_TIE02",
+      "from_node_id": "11_MVLV14690",
+      "to_node_id": "11_MVLV35159",
+      "cable_id": "CBL_240AL",
+      "length": 820.0,
+      "is_switch": true,
+      "normally_open": true
+    },
+    {
+      "connection_id": "11_B04",
+      "from_node_id": "11_MVB_CP1",
+      "to_node_id": "11_MVLV52721",
+      "cable_id": "CBL_150CU",
+      "length": 900.0,
+      "status": "inactive"
+    }
+  ],
+  "connection_points": [
+    {
+      "connection_point_id": "11_MVLV14690",
+      "node_id": "11_MVLV14690",
+      "name": "11_MVLV14690"
+    },
+    {
+      "connection_point_id": "11_MVLV16194",
+      "node_id": "11_MVLV16194",
+      "name": "11_MVLV16194"
+    },
+    {
+      "connection_point_id": "11_MVLV22874",
+      "node_id": "11_MVLV22874",
+      "name": "11_MVLV22874"
+    },
+    {
+      "connection_point_id": "11_MVLV23213",
+      "node_id": "11_MVLV23213",
+      "name": "11_MVLV23213"
+    },
+    {
+      "connection_point_id": "11_MVLV35159",
+      "node_id": "11_MVLV35159",
+      "name": "11_MVLV35159"
+    },
+    {
+      "connection_point_id": "11_MVLV36338",
+      "node_id": "11_MVLV36338",
+      "name": "11_MVLV36338"
+    },
+    {
+      "connection_point_id": "11_MVLV66105",
+      "node_id": "11_MVLV66105",
+      "name": "11_MVLV66105"
+    },
+    {
+      "connection_point_id": "11_MVLV66984",
+      "node_id": "11_MVLV66984",
+      "name": "11_MVLV66984"
+    },
+    {
+      "connection_point_id": "11_MVLV73455",
+      "node_id": "11_MVLV73455",
+      "name": "11_MVLV73455"
+    },
+    {
+      "connection_point_id": "11_MVLV73493",
+      "node_id": "11_MVLV73493",
+      "name": "11_MVLV73493"
+    },
+    {
+      "connection_point_id": "11_MVB_CP1",
+      "node_id": "11_MVB_CP1",
+      "name": "Feeder B industrial park"
+    },
+    {
+      "connection_point_id": "11_MVB_CP2",
+      "node_id": "11_MVB_CP2",
+      "name": "Feeder B residential"
+    }
+  ],
+  "transformers": [
+    {
+      "transformer_id": "11_MVLV14690_Transformer",
+      "connection_point_id": "11_MVLV14690",
+      "rated_power_kva": 400.0,
+      "primary_voltage_kv": 20.0,
+      "secondary_voltage_v": 230.0,
+      "name": "11_MVLV14690_Transformer",
+      "imp_real": 0.011,
+      "imp_imag": 0.04
+    },
+    {
+      "transformer_id": "11_MVLV16194_Transformer",
+      "connection_point_id": "11_MVLV16194",
+      "rated_power_kva": 250.0,
+      "primary_voltage_kv": 20.0,
+      "secondary_voltage_v": 230.0,
+      "name": "11_MVLV16194_Transformer"
+    },
+    {
+      "transformer_id": "11_MVLV22874_Transformer",
+      "connection_point_id": "11_MVLV22874",
+      "rated_power_kva": 250.0,
+      "primary_voltage_kv": 20.0,
+      "secondary_voltage_v": 230.0,
+      "name": "11_MVLV22874_Transformer"
+    },
+    {
+      "transformer_id": "11_MVLV23213_Transformer",
+      "connection_point_id": "11_MVLV23213",
+      "rated_power_kva": 315.0,
+      "primary_voltage_kv": 20.0,
+      "secondary_voltage_v": 230.0,
+      "name": "11_MVLV23213_Transformer"
+    },
+    {
+      "transformer_id": "11_MVLV35159_Transformer",
+      "connection_point_id": "11_MVLV35159",
+      "rated_power_kva": 250.0,
+      "primary_voltage_kv": 20.0,
+      "secondary_voltage_v": 230.0,
+      "name": "11_MVLV35159_Transformer",
+      "tap_pos": 2
+    },
+    {
+      "transformer_id": "11_MVLV36338_Transformer",
+      "connection_point_id": "11_MVLV36338",
+      "rated_power_kva": 160.0,
+      "primary_voltage_kv": 20.0,
+      "secondary_voltage_v": 230.0,
+      "name": "11_MVLV36338_Transformer"
+    },
+    {
+      "transformer_id": "11_MVLV66105_Transformer",
+      "connection_point_id": "11_MVLV66105",
+      "rated_power_kva": 100.0,
+      "primary_voltage_kv": 20.0,
+      "secondary_voltage_v": 230.0,
+      "name": "11_MVLV66105_Transformer",
+      "status": "inactive"
+    },
+    {
+      "transformer_id": "11_MVLV66984_Transformer",
+      "connection_point_id": "11_MVLV66984",
+      "rated_power_kva": 2000.0,
+      "primary_voltage_kv": 20.0,
+      "secondary_voltage_v": 230.0,
+      "name": "11_MVLV66984_Transformer",
+      "tap_pos": -1,
+      "imp_real": 0.0085,
+      "imp_imag": 0.06
+    },
+    {
+      "transformer_id": "11_MVLV73455_Transformer",
+      "connection_point_id": "11_MVLV73455",
+      "rated_power_kva": 250.0,
+      "primary_voltage_kv": 20.0,
+      "secondary_voltage_v": 230.0,
+      "name": "11_MVLV73455_Transformer",
+      "tap_pos": 1
+    },
+    {
+      "transformer_id": "11_MVLV73493_Transformer",
+      "connection_point_id": "11_MVLV73493",
+      "rated_power_kva": 400.0,
+      "primary_voltage_kv": 20.0,
+      "secondary_voltage_v": 230.0,
+      "name": "11_MVLV73493_Transformer"
+    },
+    {
+      "transformer_id": "11_MVB_CP1_Transformer",
+      "connection_point_id": "11_MVB_CP1",
+      "rated_power_kva": 630.0,
+      "primary_voltage_kv": 20.0,
+      "secondary_voltage_v": 230.0,
+      "imp_real": 0.009,
+      "imp_imag": 0.04,
+      "tap_pos": 0,
+      "tap_step_pct": 2.5,
+      "tap_min": -2,
+      "tap_max": 2,
+      "name": "Feeder B 630 kVA"
+    },
+    {
+      "transformer_id": "11_MVB_CP2_Transformer",
+      "connection_point_id": "11_MVB_CP2",
+      "rated_power_kva": 400.0,
+      "primary_voltage_kv": 20.0,
+      "secondary_voltage_v": 230.0,
+      "name": "Feeder B 400 kVA"
+    }
+  ],
+  "regulators": [
+    {
+      "regulator_id": "REG01",
+      "connection_id": "11_300364",
+      "v_set_pu": 1.0,
+      "deadband_pu": 0.02,
+      "tap_step_pct": 0.625,
+      "tap_min": -16,
+      "tap_max": 16,
+      "tap_pos": 0
+    }
+  ],
+  "shunts": [
+    {
+      "shunt_id": "CB01",
+      "node_id": "11_MVLV73493",
+      "q_step_kvar": 150.0,
+      "n_steps": 2,
+      "step": 1,
+      "name": "Capacitor bank 2 x 150 kvar"
+    },
+    {
+      "shunt_id": "RX01",
+      "node_id": "11_MVBus11314",
+      "q_step_kvar": -100.0,
+      "n_steps": 1,
+      "step": 1,
+      "name": "Shunt reactor 100 kvar"
+    }
+  ],
+  "ders": [
+    {
+      "der_id": "PV01",
+      "node_id": "11_MVBus11314",
+      "type": "pv",
+      "s_rated_kva": 1500.0,
+      "control_mode": "q_v",
+      "name": "Solar park 1.5 MVA, Q(V)"
+    },
+    {
+      "der_id": "PV02",
+      "node_id": "11_MVLV14683",
+      "type": "pv",
+      "s_rated_kva": 800.0,
+      "p_max_kw": 750.0,
+      "control_mode": "p_v",
+      "cos_phi": 0.95,
+      "excitation": "under",
+      "name": "Rooftop PV 800 kVA, P(V)"
+    },
+    {
+      "der_id": "WT01",
+      "node_id": "11_MVLV52721",
+      "type": "wind",
+      "s_rated_kva": 1000.0,
+      "profile_value": 0.5,
+      "control_mode": "voltage",
+      "v_set_pu": 1.01,
+      "name": "Wind turbine 1 MVA, voltage control"
+    },
+    {
+      "der_id": "CHP01",
+      "node_id": "11_MVLV36338",
+      "type": "chp",
+      "s_rated_kva": 500.0,
+      "profile_value": 0.9,
+      "control_mode": "fixed_pf",
+      "cos_phi": 0.95,
+      "excitation": "over",
+      "name": "District heating CHP"
+    },
+    {
+      "der_id": "BAT01",
+      "node_id": "11_MVB_N1",
+      "type": "battery",
+      "s_rated_kva": 500.0,
+      "profile_value": -0.4,
+      "control_mode": "fixed_pf",
+      "name": "Battery 500 kVA, charging"
+    },
+    {
+      "der_id": "EV01",
+      "node_id": "11_MVB_CP1",
+      "type": "ev_hub",
+      "s_rated_kva": 300.0,
+      "profile_value": -0.8,
+      "control_mode": "fixed_pf",
+      "cos_phi": 0.98,
+      "name": "EV charging hub"
+    }
+  ]
+}

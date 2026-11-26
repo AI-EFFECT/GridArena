@@ -89,15 +89,14 @@
     });
 
     Plotly.newPlot('chartVoltageEnvelope', [
-      { x: times, y: maxs, mode: 'lines', name: 'Max', line: { color: '#ef4444', width: 1 }, fill: 'none' },
-      { x: times, y: avgs, mode: 'lines', name: 'Avg', line: { color: '#2563eb', width: 2 } },
-      { x: times, y: mins, mode: 'lines', name: 'Min', line: { color: '#f59e0b', width: 1 }, fill: 'tonexty', fillcolor: 'rgba(37,99,235,0.06)' },
-      { x: [times[0], times[times.length - 1]], y: [NOMINAL_V, NOMINAL_V], mode: 'lines', name: 'Nominal (230V)', line: { color: '#10b981', dash: 'dash', width: 1 } }
-    ], {
+      { x: times, y: maxs, mode: 'lines', name: 'Max', line: { color: GA.palette.red, width: 1 }, fill: 'none' },
+      { x: times, y: avgs, mode: 'lines', name: 'Avg', line: { color: GA.palette.cyan, width: 2 } },
+      { x: times, y: mins, mode: 'lines', name: 'Min', line: { color: GA.palette.amber, width: 1 }, fill: 'tonexty', fillcolor: 'rgba(100,200,235,0.08)' },
+      { x: [times[0], times[times.length - 1]], y: [NOMINAL_V, NOMINAL_V], mode: 'lines', name: 'Nominal (230V)', line: { color: GA.palette.green, dash: 'dash', width: 1 } }
+    ], GA.chartLayout({
       margin: { l: 50, r: 20, t: 10, b: 40 }, legend: { orientation: 'h', y: -0.18 },
-      yaxis: { title: 'Voltage (V)' }, xaxis: { title: '' },
-      plot_bgcolor: '#ffffff', paper_bgcolor: '#ffffff'
-    }, { responsive: true });
+      yaxis: { title: 'Voltage (V)' }, xaxis: { title: '' }
+    }), { responsive: true });
   }
 
   // ── Overview: Power Total ──
@@ -120,24 +119,23 @@
     });
 
     var traces = [
-      { x: times, y: totals['Total'], mode: 'lines', name: 'Total', line: { color: '#1e3a5f', width: 2 } },
-      { x: times, y: totals['R'], mode: 'lines', name: 'Phase R', line: { color: '#ef4444', width: 1 }, visible: 'legendonly' },
-      { x: times, y: totals['S'], mode: 'lines', name: 'Phase S', line: { color: '#f59e0b', width: 1 }, visible: 'legendonly' },
-      { x: times, y: totals['T'], mode: 'lines', name: 'Phase T', line: { color: '#2563eb', width: 1 }, visible: 'legendonly' }
+      { x: times, y: totals['Total'], mode: 'lines', name: 'Total', line: { color: GA.palette.cyan, width: 2 } },
+      { x: times, y: totals['R'], mode: 'lines', name: 'Phase R', line: { color: GA.palette.red, width: 1 }, visible: 'legendonly' },
+      { x: times, y: totals['S'], mode: 'lines', name: 'Phase S', line: { color: GA.palette.amber, width: 1 }, visible: 'legendonly' },
+      { x: times, y: totals['T'], mode: 'lines', name: 'Phase T', line: { color: GA.palette.purple, width: 1 }, visible: 'legendonly' }
     ];
 
-    Plotly.newPlot('chartPowerTotal', traces, {
+    Plotly.newPlot('chartPowerTotal', traces, GA.chartLayout({
       margin: { l: 50, r: 20, t: 10, b: 40 }, legend: { orientation: 'h', y: -0.18 },
-      yaxis: { title: 'Active Power (kW)' },
-      plot_bgcolor: '#ffffff', paper_bgcolor: '#ffffff'
-    }, { responsive: true });
+      yaxis: { title: 'Active Power (W)' }
+    }), { responsive: true });
   }
 
   // ── Overview: Heatmap ──
 
   function renderHeatmap(metric) {
     var field = metric === 'power' ? 'power_active' : 'voltage_magnitude';
-    var label = metric === 'power' ? 'Active Power (kW)' : 'Voltage (V)';
+    var label = metric === 'power' ? 'Active Power (W)' : 'Voltage (V)';
 
     var allNodes = unique(data, 'node_id');
     var allPhases = unique(data, 'phase').filter(function (p) { return p !== 'N/A'; });
@@ -165,12 +163,11 @@
       z: z, x: times, y: rows, type: 'heatmap',
       colorscale: metric === 'power' ? 'RdBu' : 'YlOrRd', reversescale: metric !== 'power',
       colorbar: { title: label }
-    }], {
+    }], GA.chartLayout({
       margin: { l: 120, r: 20, t: 10, b: 50 },
       xaxis: { title: 'Datetime', tickangle: -45 },
-      yaxis: { title: '', autorange: 'reversed' },
-      plot_bgcolor: '#ffffff', paper_bgcolor: '#ffffff'
-    }, { responsive: true });
+      yaxis: { title: '', autorange: 'reversed' }
+    }), { responsive: true });
   }
 
   document.getElementById('heatmapMetric').addEventListener('change', function () {
@@ -184,7 +181,7 @@
     var selPhases = [];
     document.querySelectorAll('.tsPhase:checked').forEach(function (cb) { selPhases.push(cb.value); });
     var metric = document.getElementById('tsMetric').value;
-    var label = { voltage_magnitude: 'Voltage (V)', power_active: 'Active Power (kW)', power_reactive: 'Reactive Power (kVAr)' }[metric];
+    var label = { voltage_magnitude: 'Voltage (V)', power_active: 'Active Power (W)', power_reactive: 'Reactive Power (VAr)' }[metric];
 
     var traces = [];
     selNodes.forEach(function (node) {
@@ -199,11 +196,10 @@
       });
     });
 
-    Plotly.newPlot('chartTimeSeries', traces, {
+    Plotly.newPlot('chartTimeSeries', traces, GA.chartLayout({
       margin: { l: 50, r: 20, t: 10, b: 40 }, legend: { orientation: 'h', y: -0.15 },
-      yaxis: { title: label },
-      plot_bgcolor: '#ffffff', paper_bgcolor: '#ffffff'
-    }, { responsive: true });
+      yaxis: { title: label }
+    }), { responsive: true });
   }
 
   document.getElementById('tsUpdate').addEventListener('click', function () {
@@ -226,24 +222,22 @@
 
     Plotly.newPlot('chartNodeAvgV', [{
       x: nodes, y: avgVs, type: 'bar',
-      marker: { color: '#2563eb' }
+      marker: { color: GA.palette.cyan }
     }, {
       x: [nodes[0], nodes[nodes.length - 1]], y: [NOMINAL_V, NOMINAL_V],
-      mode: 'lines', name: 'Nominal', line: { color: '#10b981', dash: 'dash' }
-    }], {
+      mode: 'lines', name: 'Nominal', line: { color: GA.palette.green, dash: 'dash' }
+    }], GA.chartLayout({
       margin: { l: 50, r: 20, t: 10, b: 60 }, showlegend: false,
-      yaxis: { title: 'Avg Voltage (V)' }, xaxis: { tickangle: -45 },
-      plot_bgcolor: '#ffffff', paper_bgcolor: '#ffffff'
-    }, { responsive: true });
+      yaxis: { title: 'Avg Voltage (V)' }, xaxis: { tickangle: -45 }
+    }), { responsive: true });
 
     Plotly.newPlot('chartNodeMaxP', [{
       x: nodes, y: maxPs, type: 'bar',
-      marker: { color: '#f59e0b' }
-    }], {
+      marker: { color: GA.palette.amber }
+    }], GA.chartLayout({
       margin: { l: 50, r: 20, t: 10, b: 60 }, showlegend: false,
-      yaxis: { title: 'Max |Active Power| (kW)' }, xaxis: { tickangle: -45 },
-      plot_bgcolor: '#ffffff', paper_bgcolor: '#ffffff'
-    }, { responsive: true });
+      yaxis: { title: 'Max |Active Power| (W)' }, xaxis: { tickangle: -45 }
+    }), { responsive: true });
   }
 
   // ── Raw Data tab ──

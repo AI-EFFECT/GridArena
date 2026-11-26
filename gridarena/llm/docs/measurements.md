@@ -43,8 +43,8 @@ Use this when you want to retrieve voltage or power measurements from a grid, in
 **Returns:** Measurement records matching the filters.
 
 **How to interpret:**
-- `power_active`: real power in watts — positive means load consumption, negative means generation (e.g. solar panels injecting power)
-- `power_reactive`: reactive power in VAR — indicates inductive or capacitive load behaviour
+- `power_active`: real power in W (watts) — positive means load consumption, negative means generation (e.g. solar panels injecting power)
+- `power_reactive`: reactive power in VAr — indicates inductive or capacitive load behaviour
 - `voltage_magnitude`: RMS voltage at the node, typically around 230V for a healthy low-voltage grid. Values below 218.5V (0.95 pu) indicate undervoltage; values above 241.5V (1.05 pu) indicate overvoltage.
 - `voltage_angle`: phase angle in degrees, used in power flow equations to compute current direction and magnitude
 

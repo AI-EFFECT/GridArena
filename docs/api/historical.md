@@ -5,7 +5,12 @@ named collections of standalone power/voltage series ("historicals") that
 all share one declared timeline. Unlike [Measurements](measurements.md),
 none of this is tied to a specific grid or node; each series just carries a
 `series_id` (unique within its database) and a `grid_level` tag (`MV`,
-`LV`, or `Feeder`). See
+`LV`, or `Feeder`). Each database also has a `data_type`: `"load"`
+(consumption, the default) or a kind of generation injected into the grid —
+`"pv"` (solar PV), `"chp"` (cogeneration), `"wind"`, `"hydro"`,
+`"other_generation"` (other technologies) or `"injection_total"` (all
+generation together). Every type has exactly the same structure; the type
+only marks what the power values are. See
 [Data Model › Measurements and historical data](../database-schema.md#measurements-and-historical-data).
 
 **Base path:** `/historical`
@@ -25,6 +30,7 @@ more series, each carrying values that must fall on that timeline.
 | Name | Type | Description |
 |---|---|---|
 | `file` (multipart) | file, required | A JSON file matching the `HistoricalDatabaseUpload` schema (see below). |
+| `data_type` (multipart) | `"load"` \| `"pv"` \| `"chp"` \| `"wind"` \| `"hydro"` \| `"other_generation"` \| `"injection_total"`, optional | The database type, as chosen on the Historical page. Used when the file has no `data_type`; if the file has one, the two must match. |
 
 Uploaded file content:
 
@@ -33,6 +39,7 @@ Uploaded file content:
   "database_id": "db001",
   "name": "Feeder measurements 2024",
   "description": "Hourly feeder readings",
+  "data_type": "load",
   "timestamps": ["2024-08-20T14:00:00", "2024-08-20T15:00:00"],
   "historicals": [
     {
@@ -44,8 +51,8 @@ Uploaded file content:
         {
           "datetime": "2024-08-20T14:00:00",
           "phase": "R",
-          "power_active": 3.2,
-          "power_reactive": 0.6,
+          "power_active": 3200.0,
+          "power_reactive": 600.0,
           "voltage_magnitude": 229.5,
           "voltage_angle": -0.4
         }
@@ -59,10 +66,26 @@ Validated at the schema level (`HistoricalDatabaseUpload`) before any
 database access: at least one timestamp and one series are required,
 `series_id` must be unique within the database, every value's `datetime`
 must be one of the declared `timestamps`, and each value must include
-`power_active` and/or `voltage_magnitude`. The upload is subject to the
+`power_active` and/or `voltage_magnitude`. Power is in W / VAr (load
+convention) and voltage in V. LV series may carry one row per phase. MV
+and Feeder series hold three-phase totals, either as one row with `phase`
+omitted or as per-phase rows that consumers sum — see
+[Units](index.md#units). The upload is subject to the
 shared [200 MB upload cap](index.md#resource-safety-limits); bulk loads that
 legitimately exceed it go through a direct script against the database
 instead of this endpoint.
+
+`data_type` defaults to `"load"`. Every other type holds generation (for
+example `"pv"`, solar PV production): `power_active` is the power generated
+(positive = produced, the opposite sign of the load convention), and series
+still carry a `grid_level` for where the generation is connected. Small
+negative values, such as inverter standby draw at night, are accepted.
+Re-uploading to an existing `database_id` must use the same `data_type` as
+the database (`409` otherwise), so generation and load series are never
+merged into one database.
+[PF Data Generation](pf-datagen.md) uses only `"load"` databases as its load
+source; generation databases drive its generated DER, one per plant group
+(`der.groups`).
 
 **Response** `200`
 
@@ -76,7 +99,8 @@ instead of this endpoint.
 |---|---|
 | `413` | Uploaded file exceeds the [200 MB upload cap](index.md#resource-safety-limits). |
 | `400` | Uploaded file is not valid JSON. |
-| `422` | File content doesn't conform to the `HistoricalDatabaseUpload` schema — including a value whose `datetime` isn't in the declared `timestamps`, a duplicate `series_id`, or a value missing both `power_active` and `voltage_magnitude`. |
+| `409` | `database_id` already exists with a different `data_type`. |
+| `422` | File content doesn't conform to the `HistoricalDatabaseUpload` schema — including a value whose `datetime` isn't in the declared `timestamps`, a duplicate `series_id`, a value missing both `power_active` and `voltage_magnitude`, or an unknown `data_type` — or the `data_type` field contradicts the file's. |
 | `500` | Database error during insertion. |
 
 ---
@@ -175,6 +199,7 @@ datetime range and phase.
 ```json
 {
   "database_id": "db001",
+  "data_type": "load",
   "series_id": "series1",
   "grid_level": "LV",
   "name": "Feeder A",
@@ -184,8 +209,8 @@ datetime range and phase.
     {
       "datetime": "2024-08-20T14:00:00",
       "phase": "R",
-      "power_active": 3.2,
-      "power_reactive": 0.6,
+      "power_active": 3200.0,
+      "power_reactive": 600.0,
       "voltage_magnitude": 229.5,
       "voltage_angle": -0.4
     }
@@ -216,18 +241,24 @@ is hit, `truncated` is `true` and a `truncation_hint` field is added:
 
 ### `GET /historical/databases`
 
-Lists every historical database with a detected `grid_level`
+Lists every historical database with its `data_type` (`"load"`, `"pv"`, ...),
+a detected `grid_level`
 (`"MV"`/`"LV"`/`"Feeder"`/`"Mixed"`/`"Empty"` — `"Mixed"` if its series span
-more than one level, `"Empty"` if it has none), record/series counts, and
-timestamp range. Used to populate data-source pickers elsewhere in the app
-(e.g. [PF Data Generation](pf-datagen.md)).
+more than one level, `"Empty"` if it has none), series counts per level, its
+record count, and its shared timeline (number of timestamps, first and
+last). Used to populate data-source pickers elsewhere in the app (e.g.
+[PF Data Generation](pf-datagen.md), whose New Dataset page loads it at its
+data-source step and offers only `"load"` databases).
 
-!!! note "Cached for 5 minutes"
-    This aggregates over `HistoricalRecords`, which can be tens of millions
-    of rows, so the summary is cached in-process for 300 seconds and
-    invalidated immediately on any upload/delete through this router. A bulk
-    change made directly against Postgres (bypassing the API) may be stale
-    here for up to 5 minutes.
+!!! note "Stored record counts"
+    Record counts aren't counted on request: counting `HistoricalRecords`
+    means scanning the whole table (about 90 s for a 40-million-row
+    database). Each series stores its own count instead, kept exact by
+    triggers in Postgres on every insert, update, delete and truncate,
+    including bulk imports made directly against Postgres. See
+    [Data Model › Historical databases](../database-schema.md). The response
+    reads only small tables, so it answers in well under a second and is
+    never stale.
 
 **Response** `200`
 
@@ -236,11 +267,13 @@ timestamp range. Used to populate data-source pickers elsewhere in the app
   {
     "database_id": "db001",
     "name": "Feeder measurements 2024",
+    "data_type": "load",
     "n_series": 3,
     "n_mv": 0,
     "n_lv": 3,
     "n_feeder": 0,
-    "n_records": 41800000,
+    "n_records": 8931,
+    "n_timestamps": 2977,
     "first_ts": "2024-08-20 14:00",
     "last_ts": "2024-09-20 14:00",
     "grid_level": "LV"

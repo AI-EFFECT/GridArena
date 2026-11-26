@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Starting GridArena</title>
+  {# Standalone page: base.html loads parts (chat, nav data) that need the database. #}
+  <script src="/static/js/shell.js"></script>
+  <link rel="stylesheet" href="/static/css/tokens.css">
+  <link rel="stylesheet" href="/static/css/style.css">
+  <style>
+    body { min-height: 100vh; display: flex; align-items: center; justify-content: center; margin: 0;
+           background: var(--color-canvas); color: var(--color-text); padding: 16px; box-sizing: border-box; }
+    .startup { width: 100%; max-width: 560px; }
+    .startup h1 { font-size: 1.35rem; margin: 0 0 4px; }
+    .startup .lead { color: var(--color-text-muted); margin: 0 0 20px; }
+    .bar { height: 10px; border-radius: 999px; background: var(--color-surface-sunken, var(--color-surface));
+           border: 1px solid var(--color-border); overflow: hidden; }
+    .bar > div { height: 100%; width: 0; background: var(--color-accent); transition: width .6s ease; }
+    .bar-meta { display: flex; justify-content: space-between; color: var(--color-text-muted);
+                font-size: .85rem; margin: 6px 0 18px; }
+    .steps { list-style: none; padding: 0; margin: 0; }
+    .steps li { display: flex; gap: 10px; padding: 7px 0; border-top: 1px solid var(--color-border); }
+    .steps li:first-child { border-top: none; }
+    .steps .icon { width: 18px; flex: none; text-align: center; color: var(--color-text-faint); }
+    .steps li.done .icon { color: var(--color-success); }
+    .steps li.running .icon { color: var(--color-accent); }
+    .steps li.failed .icon { color: var(--color-danger); }
+    .steps li.pending .name { color: var(--color-text-faint); }
+    .steps .detail { display: block; color: var(--color-text-muted); font-size: .85rem; margin-top: 2px; }
+    .error { margin-top: 16px; padding: 10px 12px; border-radius: var(--radius-sm);
+             background: var(--color-danger-soft); color: var(--color-danger); word-break: break-word; }
+    .error button { margin-top: 10px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .steps li.running .icon span { display: inline-block; animation: spin 1s linear infinite; }
+  </style>
+</head>
+<body>
+  <main class="startup">
+    <h1>Starting GridArena</h1>
+    <p class="lead" id="lead">Preparing the database. This page opens by itself when it's ready.</p>
+    <div class="bar" role="progressbar" aria-label="Database preparation" aria-valuemin="0" aria-valuemax="100"
+         aria-valuenow="{{ ((status.progress or 0) * 100) | round | int }}">
+      <div id="barFill" style="width: {{ ((status.progress or 0) * 100) | round(1) }}%;"></div>
+    </div>
+    <div class="bar-meta"><span id="pct">{{ ((status.progress or 0) * 100) | round | int }} %</span><span id="elapsed"></span></div>
+    <ul class="steps" id="steps">
+      {% for s in status.steps %}
+      <li class="{{ s.status }}"><span class="icon">{{ {'done': '✓', 'running': '↻', 'failed': '✕'}.get(s.status, '○') }}</span>
+        <span class="name">{{ s.label }}{% if s.detail %}<span class="detail">{{ s.detail }}</span>{% endif %}</span></li>
+      {% endfor %}
+    </ul>
+    <div class="error" id="error" {% if status.state != 'failed' %}hidden{% endif %}>
+      <div id="errorText">{{ status.error or '' }}</div>
+      <button class="btn btn-primary" type="button" id="retry">Retry</button>
+    </div>
+  </main>
+
+  <script>
+  (function () {
+    var ICONS = { done: '✓', running: '<span>↻</span>', failed: '✕', pending: '○' };
+
+    function fmtTime(s) {
+      s = Math.max(0, Math.round(s));
+      return s < 60 ? s + ' s' : Math.floor(s / 60) + ' min ' + (s % 60) + ' s';
+    }
+
+    function esc(t) {
+      var d = document.createElement('div');
+      d.textContent = t == null ? '' : String(t);
+      return d.innerHTML;
+    }
+
+    function render(st) {
+      var pct = Math.round((st.progress || 0) * 100);
+      document.getElementById('barFill').style.width = ((st.progress || 0) * 100).toFixed(1) + '%';
+      document.querySelector('.bar').setAttribute('aria-valuenow', pct);
+      document.getElementById('pct').textContent = pct + ' %';
+      var running = (st.steps || []).filter(function (s) { return s.status === 'running'; })[0];
+      var meta = st.elapsed_s != null ? 'elapsed ' + fmtTime(st.elapsed_s) : '';
+      if (running && running.estimate_s) {
+        meta += ' · this step takes about ' + fmtTime(running.estimate_s) + ' (estimate)';
+      }
+      document.getElementById('elapsed').textContent = meta;
+      document.getElementById('steps').innerHTML = (st.steps || []).map(function (s) {
+        return '<li class="' + s.status + '"><span class="icon">' + (ICONS[s.status] || '○') + '</span>'
+          + '<span class="name">' + esc(s.label)
+          + (s.detail ? '<span class="detail">' + esc(s.detail) + '</span>' : '') + '</span></li>';
+      }).join('');
+      var failed = st.state === 'failed';
+      document.getElementById('error').hidden = !failed;
+      document.getElementById('errorText').textContent = failed
+        ? 'Preparing the database failed: ' + (st.error || 'unknown error') : '';
+      document.getElementById('lead').textContent = failed
+        ? 'GridArena could not prepare the database.'
+        : 'Preparing the database. This page opens by itself when it\'s ready.';
+    }
+
+    var timer = null;
+    async function poll() {
+      try {
+        var res = await fetch('/startup/status', { cache: 'no-store' });
+        var st = await res.json();
+        if (st.state === 'ready' || st.state === 'not_started') {
+          location.reload();
+          return;
+        }
+        render(st);
+        if (st.state === 'failed') return;   // wait for Retry
+      } catch (err) {
+        // Server restarting or unreachable: keep trying.
+      }
+      timer = setTimeout(poll, 1000);
+    }
+
+    document.getElementById('retry').addEventListener('click', async function () {
+      this.disabled = true;
+      try { await fetch('/startup/retry', { method: 'POST' }); } catch (err) { /* keep polling */ }
+      this.disabled = false;
+      clearTimeout(timer);
+      poll();
+    });
+
+    poll();
+  })();
+  </script>
+</body>
+</html>

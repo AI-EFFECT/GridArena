@@ -38,8 +38,8 @@ Uploaded file content:
         {
           "datetime": "2024-08-20T14:00:00",
           "phase": "R",
-          "power_active": 3.2,
-          "power_reactive": 0.6,
+          "power_active": 3200.0,
+          "power_reactive": 600.0,
           "voltage_magnitude": 229.5,
           "voltage_angle": -0.4
         }
@@ -51,7 +51,8 @@ Uploaded file content:
 
 `phase` is optional per reading (`"R"`, `"S"`, `"T"`, or omitted/`null` for
 an aggregated row); `power_active`, `power_reactive`, `voltage_magnitude`,
-and `voltage_angle` are required. The upload is subject to the shared
+and `voltage_angle` are required. Power is in W / VAr (load convention) and
+voltage in V — see [Units](index.md#units). The upload is subject to the shared
 [200 MB upload cap](index.md#resource-safety-limits).
 
 **Response** `200`
@@ -145,8 +146,8 @@ datetime range, and phase.
       "node_id": "N1",
       "datetime": "2024-08-20T14:00:00",
       "phase": "R",
-      "power_active": 3.2,
-      "power_reactive": 0.6,
+      "power_active": 3200.0,
+      "power_reactive": 600.0,
       "voltage_magnitude": 229.5,
       "voltage_angle": -0.4
     }

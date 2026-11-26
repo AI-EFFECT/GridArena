@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block head %}
+<link rel="stylesheet" href="/static/css/digital-twin-dashboard.css">
+<link rel="stylesheet" href="/static/css/grid-dashboard.css">
+<link rel="stylesheet" href="/static/css/pf-datagen.css">
+{% endblock %}
+
+{% block content %}
+
+<!-- Header -->
+<div class="panel">
+  <div class="grid-dash-header">
+    <div>
+      <h2>Run {{ run.run_id }}</h2>
+      <p>MV grid <a href="/mv_grid/ui/{{ run.mv_grid_id }}">{{ run.mv_grid_id }}</a>{% if run.group_id %}, part of group <a href="/pf-datagen/ui/groups/{{ run.group_id }}">{{ run.group_id }}</a>{% endif %}.</p>
+    </div>
+    <a href="/pf-datagen/ui" class="btn">Back to Overview</a>
+  </div>
+  <div class="pf-meta">
+    <span>Status <span class="status-badge status-badge--{{ run.status }}" id="pfRunStatus">{{ run.status }}</span></span>
+    <span>Samples <strong id="pfRunProgress">{% if not run.total_scenarios and run.status in ('queued', 'running') %}{{ 'waiting to start' if run.status == 'queued' else 'preparing' }}{% else %}{{ run.completed_scenarios }}{% if run.failed_scenarios %} + {{ run.failed_scenarios }} failed{% endif %} / {{ run.total_scenarios }}{% endif %}</strong></span>
+    <span>Topology variants <strong>{{ run.n_topology_variants }}</strong></span>
+    <span>Created <strong>{{ run.created_at[:19] | replace('T', ' ') }}</strong></span>
+    {% if run.completed_at %}<span>Finished <strong>{{ run.completed_at[:19] | replace('T', ' ') }}</strong></span>{% endif %}
+    {% if run.seed_used is not none %}<span>Seed <strong>{{ run.seed_used }}</strong></span>{% endif %}
+  </div>
+  {% if run.status in ('queued', 'running') %}
+  <div class="pf-progress-bar"><div id="pfRunBar" style="width:{{ (100 * (run.completed_scenarios + run.failed_scenarios) / run.total_scenarios) | round(1) if run.total_scenarios else 0 }}%;"></div></div>
+  {% endif %}
+  {% if run.error %}
+  <p class="pf-step-msg">{{ run.error }}</p>
+  {% endif %}
+</div>
+
+<!-- Results -->
+<div class="panel" id="pfResultsSection" {% if run.status != 'completed' %}style="display:none;"{% endif %}>
+  <h3>Results</h3>
+  <p class="muted" id="pfResultsInfo"></p>
+  <p class="muted" id="pfReportInfo"></p>
+  <div id="pfLevelChart" style="width:100%;height:340px; display:none;"></div>
+  <div id="pfTopoChart" class="chart-frame" style="width:100%; height:300px; display:none;"></div>
+  <div id="pfPenChart" style="width:100%;height:340px; display:none;"></div>
+  <div id="pfLoadingChart" style="width:100%;height:300px; display:none;"></div>
+  <div id="pfVoltageChart" style="width:100%;height:360px;"></div>
+  <div id="pfViolationChart" style="width:100%;height:300px; margin-top:12px;"></div>
+  <p class="muted" id="pfExportLinks"></p>
+</div>
+
+<!-- Settings -->
+<div class="panel">
+  <details>
+    <summary style="cursor:pointer; font-weight:600; color:var(--color-accent);">Settings of this run</summary>
+    <pre class="pf-config">{{ run.config | tojson(indent=2) }}</pre>
+  </details>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/pf-datagen-results.js"></script>
+<script>pfInitRunPage({{ run.run_id | tojson }}, {{ run.status | tojson }});</script>
+{% endblock %}

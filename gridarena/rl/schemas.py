@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from typing import List, Literal, Optional
 
 import numpy as np
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 @dataclass
@@ -70,6 +70,13 @@ class TrainRequest(BaseModel):
     ]] = ["ActionPenalty", "ObservationNoise"]
     wrapper_config: WrapperConfig = WrapperConfig()
     device: Literal["cpu", "cuda"] = "cpu"
+    seed: Optional[int] = Field(default=None, ge=0, description="Fixes PPO and environment randomness")
+
+    @model_validator(mode="after")
+    def _check_power_range(self):
+        if self.p_min_kw >= self.p_max_kw:
+            raise ValueError("p_min_kw must be lower than p_max_kw.")
+        return self
 
 
 class TrainResponse(BaseModel):
@@ -82,12 +89,13 @@ class RunStatus(BaseModel):
     run_id: str
     grid_id: str
     agent_type: str
-    status: Literal["queued", "running", "completed", "failed"]
+    status: Literal["queued", "running", "completed", "failed", "cancelled"]
     created_at: str
     completed_at: Optional[str] = None
     timesteps: int = 0
     error: Optional[str] = None
     metrics: Optional[dict] = None
+    cancel_requested: bool = False
 
 
 class EvaluateRequest(BaseModel):

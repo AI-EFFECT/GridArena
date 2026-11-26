@@ -1,0 +1,10 @@
+# What the solver needs (Python 3.10 or newer).
+numpy>=1.24
+scipy>=1.10
+networkx>=3.0
+pydantic>=2.0
+tzdata>=2024.1        # IANA time zones for the PV profile where the OS has none (Windows)
+threadpoolctl>=3.1    # optional: holds BLAS to one thread, which is much faster here
+
+# Only for `python run.py --format parquet`:
+# pyarrow>=14

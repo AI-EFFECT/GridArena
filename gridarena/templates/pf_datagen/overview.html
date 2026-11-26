@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+
+{% block head %}
+<link rel="stylesheet" href="/static/css/digital-twin-dashboard.css">
+<link rel="stylesheet" href="/static/css/grid-dashboard.css">
+<link rel="stylesheet" href="/static/css/pf-datagen.css">
+{% endblock %}
+
+{% block content %}
+
+<!-- Header -->
+<div class="panel">
+  <div class="grid-dash-header">
+    <div>
+      <h2>Synthetic Data Generation</h2>
+      <p>Power-flow training datasets for MV grids: historical load curves at each connection point, varied in level, generation, topology, parameters and set-points, solved for every sample, with optional noisy measurements. Runs started together on several grids form a group.</p>
+    </div>
+    <a href="/pf-datagen/ui/new" class="btn btn-primary">New Dataset</a>
+  </div>
+</div>
+
+<!-- Summary cards -->
+<div class="dt-summary">
+  <div class="dt-summary-card">
+    <div class="dt-summary-card__value">{{ runs | length }}</div>
+    <div class="dt-summary-card__label">Runs</div>
+  </div>
+  <div class="dt-summary-card">
+    <div class="dt-summary-card__value">{{ n_active }}</div>
+    <div class="dt-summary-card__label">Queued or running</div>
+  </div>
+  <div class="dt-summary-card">
+    <div class="dt-summary-card__value" style="color:var(--color-success);">{{ n_completed }}</div>
+    <div class="dt-summary-card__label">Completed</div>
+  </div>
+  <div class="dt-summary-card">
+    <div class="dt-summary-card__value">{{ groups | length }}</div>
+    <div class="dt-summary-card__label">Groups</div>
+  </div>
+</div>
+
+<!-- Runs -->
+<div class="panel grids-section">
+  <h3>Runs</h3>
+  <p class="grids-section__desc">One run per grid. Open a run for its report, charts, exports and split suggestions.</p>
+  <div class="grids-search">
+    <input type="text" id="pfRunSearch" placeholder="Search runs, grids or groups..." oninput="pfFilterRuns()">
+  </div>
+  <table class="data-table" id="pfRunsTable">
+    <thead>
+      <tr><th>Run</th><th>MV grid</th><th>Group</th><th>Status</th><th>Samples</th><th>Variants</th><th>Created</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for run in runs %}
+      <tr data-search="{{ run.run_id }} {{ run.mv_grid_id | lower }} {{ run.group_id or '' }}" data-status="{{ run.status }}">
+        <td><a href="/pf-datagen/ui/runs/{{ run.run_id }}"><strong>{{ run.run_id }}</strong></a></td>
+        <td><a href="/mv_grid/ui/{{ run.mv_grid_id }}">{{ run.mv_grid_id }}</a></td>
+        <td>{% if run.group_id %}<a href="/pf-datagen/ui/groups/{{ run.group_id }}">{{ run.group_id }}</a>{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td><span class="status-badge status-badge--{{ run.status }}" title="{{ run.error or '' }}">{{ run.status }}</span></td>
+        <td>{{ run.completed_scenarios }}{% if run.failed_scenarios %} + {{ run.failed_scenarios }} failed{% endif %} / {{ run.total_scenarios }}</td>
+        <td>{{ run.n_topology_variants }}</td>
+        <td>{{ run.created_at[:16] | replace('T', ' ') }}</td>
+        <td><a href="/pf-datagen/ui/runs/{{ run.run_id }}" class="btn btn-primary" style="height:28px; padding:0 10px; font-size:11px;">View</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8" style="text-align:center; padding:24px; color:var(--color-text-muted);">No runs yet. <a href="/pf-datagen/ui/new">Create your first dataset</a>.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Groups -->
+<div class="panel grids-section">
+  <h3>Groups</h3>
+  <p class="grids-section__desc">Runs started together on several grids, with one combined report and a split by grid.</p>
+  <table class="data-table">
+    <thead><tr><th>Group</th><th>Created</th><th>Runs</th><th>Skipped grids</th><th></th></tr></thead>
+    <tbody>
+      {% for g in groups %}
+      <tr>
+        <td><a href="/pf-datagen/ui/groups/{{ g.group_id }}"><strong>{{ g.group_id }}</strong></a></td>
+        <td>{{ (g.created_at or '')[:16] | replace('T', ' ') }}</td>
+        <td>{{ g.n_runs }}</td>
+        <td>{{ g.n_skipped }}</td>
+        <td><a href="/pf-datagen/ui/groups/{{ g.group_id }}" class="btn btn-primary" style="height:28px; padding:0 10px; font-size:11px;">View</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" style="text-align:center; padding:24px; color:var(--color-text-muted);">No groups yet. Select several grids in a new dataset to start one.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function pfFilterRuns() {
+  var q = document.getElementById('pfRunSearch').value.toLowerCase();
+  document.querySelectorAll('#pfRunsTable tbody tr[data-search]').forEach(function (row) {
+    row.style.display = row.getAttribute('data-search').indexOf(q) !== -1 ? '' : 'none';
+  });
+}
+// Refresh while any run is queued or running.
+if (document.querySelector('#pfRunsTable tr[data-status="queued"], #pfRunsTable tr[data-status="running"]')) {
+  setTimeout(function () { location.reload(); }, 10000);
+}
+</script>
+{% endblock %}

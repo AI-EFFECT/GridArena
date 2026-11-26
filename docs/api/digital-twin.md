@@ -56,8 +56,8 @@ is called.
     "measurements": "data.readings",
     "node_id": "meter_id",
     "phase": "phase",
-    "active_power": "p_kw",
-    "reactive_power": "q_kvar",
+    "active_power": "p_w",
+    "reactive_power": "q_var",
     "voltage_magnitude": "v_volts",
     "voltage_angle": null
   },
@@ -73,6 +73,12 @@ Either `field_mapping` (one shared mapping for a single combined fetch) or
 `node_assignments` (one fetch + mapping per node, each with its own
 `update_interval_seconds`/`timeout_seconds`) is used depending on how the
 twin is wired up; both are optional at creation time.
+
+Mapped values are stored as-is, so the source must already report power in
+**W / VAr** and voltage in **V** (see [Units](index.md#units)). A shared
+`field_mapping` has no scaling; a per-node mapping in `node_assignments` can
+convert with `active_power_factor` / `reactive_power_factor` /
+`voltage_magnitude_factor` (e.g. `1000` for a source that reports kW).
 
 **Response** `200`
 
@@ -189,15 +195,15 @@ their mapping before saving it.
 {
   "grid_id": "grid001",
   "source_sample": {
-    "data": { "timestamp": "2026-08-27T10:00:00", "readings": [{ "meter_id": "N1", "phase": "R", "p_kw": 3.2, "q_kvar": 0.4, "v_volts": 229.8 }] }
+    "data": { "timestamp": "2026-08-27T10:00:00", "readings": [{ "meter_id": "N1", "phase": "R", "p_w": 3200.0, "q_var": 400.0, "v_volts": 229.8 }] }
   },
   "field_mapping": {
     "timestamp": "data.timestamp",
     "measurements": "data.readings",
     "node_id": "meter_id",
     "phase": "phase",
-    "active_power": "p_kw",
-    "reactive_power": "q_kvar",
+    "active_power": "p_w",
+    "reactive_power": "q_var",
     "voltage_magnitude": "v_volts",
     "voltage_angle": null
   }

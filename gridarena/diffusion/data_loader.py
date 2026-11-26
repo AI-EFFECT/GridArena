@@ -1,6 +1,7 @@
 """Load power measurement data from the database for diffusion model training."""
 
 import logging
+from collections import Counter, defaultdict
 from typing import List, Optional, Tuple
 
 import numpy as np
@@ -8,6 +9,85 @@ import numpy as np
 import gridarena.database as db
 
 logger = logging.getLogger(__name__)
+
+
+def build_daily_snapshots(
+    rows,
+    p_min: Optional[float] = None,
+    p_max: Optional[float] = None,
+    require_even_nodes: bool = True,
+) -> Tuple[np.ndarray, int, int]:
+    """Turn raw (grid_id, node_id, phase, datetime, power_active) rows into
+    daily snapshots of shape (n_days, n_series, n_daily_timesteps).
+
+    * Each (grid, node, phase) is its own series, so several grids that reuse
+      node names, or the three phases of one node, never overwrite each other.
+    * Days are calendar dates. Only days with the dominant time-of-day pattern
+      and a value for every series are kept: a gap is dropped, never filled
+      with zeros, and a partial first day cannot shift the days after it.
+    * ``p_min`` / ``p_max`` exclude whole days that contain an out-of-range
+      value (instead of punching holes into the series).
+    """
+    if not rows:
+        raise ValueError("No measurement data found with the given filters.")
+
+    series = sorted({(r[0], r[1], r[2]) for r in rows})
+    timestamps = sorted({r[3] for r in rows})
+    s_idx = {s: i for i, s in enumerate(series)}
+    t_idx = {t: i for i, t in enumerate(timestamps)}
+
+    matrix = np.full((len(timestamps), len(series)), np.nan, dtype=np.float64)
+    for grid_id, node_id, phase, dt, p_active in rows:
+        if p_active is not None:
+            matrix[t_idx[dt], s_idx[(grid_id, node_id, phase)]] = p_active
+
+    # Drop series that carry no power (e.g. the transformer node).
+    keep_cols = np.nanmax(np.abs(np.nan_to_num(matrix, nan=0.0)), axis=0) > 1e-8
+    matrix = matrix[:, keep_cols]
+    if matrix.shape[1] == 0:
+        raise ValueError("All series were zero after filtering.")
+
+    # Group timestamps by calendar date.
+    by_date = defaultdict(list)
+    for i, ts in enumerate(timestamps):
+        by_date[ts.date()].append(i)
+    pattern_of = {d: tuple(timestamps[i].time() for i in idx) for d, idx in by_date.items()}
+    pattern, _ = Counter(pattern_of.values()).most_common(1)[0]
+    n_daily_timesteps = len(pattern)
+
+    days, dropped = [], Counter()
+    for d in sorted(by_date):
+        if pattern_of[d] != pattern:
+            dropped["incomplete"] += 1
+            continue
+        block = matrix[by_date[d], :]  # (n_daily, n_series)
+        if np.isnan(block).any():
+            dropped["missing values"] += 1
+            continue
+        if (p_min is not None and block.min() < p_min) or (p_max is not None and block.max() > p_max):
+            dropped["power range"] += 1
+            continue
+        days.append(block.T)
+
+    if dropped:
+        logger.info("Dropped days: %s", dict(dropped))
+    if not days:
+        raise ValueError(
+            f"No complete day left ({n_daily_timesteps} timesteps/day, all series present). "
+            f"Dropped: {dict(dropped)}"
+        )
+
+    snapshots = np.stack(days)  # (n_days, n_series, n_daily_timesteps), chronological
+    n_nodes = snapshots.shape[1]
+
+    # The legacy UNet2D backbone requires an even node count — drop last series if
+    # odd. Custom backbones (require_even_nodes=False) keep every series.
+    if require_even_nodes and n_nodes % 2 != 0:
+        logger.info("Odd node count (%d) — dropping last node for UNet2D compatibility", n_nodes)
+        snapshots = snapshots[:, :-1, :]
+        n_nodes -= 1
+
+    return snapshots, n_nodes, n_daily_timesteps
 
 
 def load_power_data_from_db(
@@ -21,25 +101,23 @@ def load_power_data_from_db(
 ) -> Tuple[np.ndarray, int, int]:
     """Query Measurements table and return daily snapshot matrices.
 
-    Groups the raw time-series into daily snapshots of shape (n_nodes, n_daily_timesteps).
-
     Args:
-        require_even_nodes: if True (the legacy UNet2D path), an odd node count
-            has its last node dropped so the 2D-conv downsampling works. The
+        require_even_nodes: if True (the legacy UNet2D path), an odd series count
+            has its last series dropped so the 2D-conv downsampling works. The
             custom permutation-aware backbones never downsample the node axis,
-            so callers using them should pass False to keep every node.
+            so callers using them should pass False to keep every series.
 
     Returns:
         power_snapshots: np.ndarray of shape (n_days, n_nodes, n_daily_timesteps)
-        n_nodes: int — number of nodes (after optional even-adjustment)
-        n_daily_timesteps: int — inferred measurements per day
+        n_nodes: int — number of (grid, node, phase) series
+        n_daily_timesteps: int — measurements per day
     Raises:
-        ValueError: if no matching data or insufficient data for at least one full day.
+        ValueError: if no matching data or no complete day.
     """
     conn, cursor = db.get_db_connection()
     try:
         sql = """
-            SELECT node_id, datetime, power_active
+            SELECT grid_id, node_id, phase, datetime, power_active
             FROM "Measurements"
             WHERE grid_id = ANY(%s)
         """
@@ -57,14 +135,8 @@ def load_power_data_from_db(
         if end is not None:
             sql += " AND datetime < %s"
             params.append(end)
-        if p_min is not None:
-            sql += " AND power_active >= %s"
-            params.append(p_min)
-        if p_max is not None:
-            sql += " AND power_active <= %s"
-            params.append(p_max)
 
-        sql += " ORDER BY datetime ASC, node_id ASC"
+        sql += " ORDER BY datetime ASC, grid_id ASC, node_id ASC, phase ASC"
 
         cursor.execute(sql, params)
         rows = cursor.fetchall()
@@ -76,68 +148,13 @@ def load_power_data_from_db(
             f"No measurement data found for grids={grid_ids} with the given filters."
         )
 
-    # Build (n_timesteps, n_nodes) matrix
-    node_ids = sorted(set(r[0] for r in rows))
-    timestamps = sorted(set(r[1] for r in rows))
-    node_idx = {nid: i for i, nid in enumerate(node_ids)}
-    ts_idx = {ts: i for i, ts in enumerate(timestamps)}
-
-    power_matrix = np.zeros((len(timestamps), len(node_ids)), dtype=np.float64)
-    for node_id, dt, p_active in rows:
-        power_matrix[ts_idx[dt], node_idx[node_id]] = p_active
-
-    # Remove near-zero columns
-    null_mask = np.abs(np.mean(power_matrix, axis=0)) > 1e-8
-    power_matrix = power_matrix[:, null_mask]
-
-    if power_matrix.size == 0:
-        raise ValueError("All columns were near-zero after filtering.")
-
-    n_nodes = power_matrix.shape[1]
-
-    # The legacy UNet2D backbone requires an even node count — drop last node if
-    # odd. Custom backbones (require_even_nodes=False) keep every node.
-    if require_even_nodes and n_nodes % 2 != 0:
-        logger.info("Odd node count (%d) — dropping last node for UNet2D compatibility", n_nodes)
-        power_matrix = power_matrix[:, :-1]
-        n_nodes = power_matrix.shape[1]
-
-    # Infer daily timesteps: count unique timestamps on the first day
-    dates = sorted(set(ts.date() if hasattr(ts, 'date') else ts for ts in timestamps))
-    first_day = dates[0]
-    n_daily_timesteps = sum(
-        1 for ts in timestamps
-        if (ts.date() if hasattr(ts, 'date') else ts) == first_day
-    )
-
-    if n_daily_timesteps < 1:
-        raise ValueError("Could not infer daily timestep count from the data.")
-
-    n_total = power_matrix.shape[0]
-    n_days = n_total // n_daily_timesteps
-
-    if n_days < 1:
-        raise ValueError(
-            f"Not enough data for a full day: {n_total} timesteps, "
-            f"{n_daily_timesteps} per day inferred."
-        )
-
-    # Trim to exact multiple of n_daily_timesteps
-    usable = n_days * n_daily_timesteps
-    power_matrix = power_matrix[:usable, :]
-
-    # Reshape to (n_days, n_nodes, n_daily_timesteps)
-    # power_matrix is (usable_timesteps, n_nodes) → transpose to (n_nodes, usable_timesteps)
-    # then reshape to (n_nodes, n_days, n_daily_timesteps) and transpose to (n_days, n_nodes, n_daily_timesteps)
-    power_snapshots = (
-        power_matrix.T
-        .reshape(n_nodes, n_days, n_daily_timesteps)
-        .transpose(1, 0, 2)
+    power_snapshots, n_nodes, n_daily_timesteps = build_daily_snapshots(
+        rows, p_min=p_min, p_max=p_max, require_even_nodes=require_even_nodes,
     )
 
     logger.info(
-        "Loaded power data: %d days x %d nodes x %d timesteps/day from %d grids",
-        n_days, n_nodes, n_daily_timesteps, len(grid_ids),
+        "Loaded power data: %d days x %d series x %d timesteps/day from %d grids",
+        power_snapshots.shape[0], n_nodes, n_daily_timesteps, len(grid_ids),
     )
 
     return power_snapshots, n_nodes, n_daily_timesteps

@@ -1,6 +1,7 @@
 """Diffusion Model Router — train generative models, generate synthetic power
 data, audit privacy, and search for the best number of epochs."""
 
+import asyncio
 import json
 import logging
 from pathlib import Path
@@ -10,6 +11,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 import gridarena.database as db
+from gridarena.diffusion.jobs import generate_snapshot_job
 from gridarena.diffusion.run_manager import diffusion_registry
 from gridarena.diffusion.schemas import (
     DiffusionEpochSearchRequest,
@@ -112,6 +114,23 @@ async def get_diffusion_run(run_id: str):
     return run.model_dump()
 
 
+@router.post("/runs/{run_id}/cancel")
+async def cancel_diffusion_run(run_id: str):
+    """Stop a queued or running diffusion job (train, privacy check or epoch search).
+
+    Queued jobs are dropped immediately; running ones stop at the next batch
+    and then report status "cancelled".
+    """
+    run = diffusion_registry.get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found.")
+    if run.status not in ("queued", "running"):
+        raise HTTPException(status_code=409, detail=f"Run is already {run.status}.")
+    run = diffusion_registry.cancel(run_id)
+    message = "Run cancelled." if run.status == "cancelled" else "Cancellation requested; the run stops at its next batch."
+    return {"run_id": run_id, "status": run.status, "message": message}
+
+
 @router.get("/runs/{run_id}/model")
 async def download_diffusion_model(run_id: str):
     run = diffusion_registry.get_run(run_id)
@@ -164,10 +183,11 @@ async def generate_snapshot(run_id: str, request: GenerateSnapshotRequest = None
 
     run_dir = str(diffusion_registry.get_run_dir(run_id))
     try:
-        from gridarena.diffusion.model_core import generate_snapshot as _generate
-
         req = request or GenerateSnapshotRequest()
-        return _generate(model_dir=run_dir, num_inference_steps=req.num_inference_steps, device=req.device)
+        # Runs in the registry's inference worker: torch never loads here.
+        return await asyncio.wrap_future(diffusion_registry.run_inference(
+            generate_snapshot_job, run_dir, req.num_inference_steps, req.device,
+        ))
     except Exception as e:
         logger.error("Snapshot generation failed for run %s: %s", run_id, e, exc_info=True)
         raise HTTPException(status_code=500, detail="Generation failed. See server logs for details.")
@@ -191,7 +211,7 @@ def _fetch_grid_ids() -> list[str]:
 async def diffusion_train_page(request: Request):
     grids = _fetch_grid_ids()
     runs = diffusion_registry.list_runs()
-    return templates.TemplateResponse("diffusion/train.html", {
+    return templates.TemplateResponse(request, "diffusion/train.html", {
         "request": request,
         "title": "Diffusion Models",
         "active": "diffusion",
@@ -219,7 +239,7 @@ async def diffusion_run_detail_page(request: Request, run_id: str):
         if p.exists():
             epoch_report = json.loads(p.read_text(encoding="utf-8"))
 
-    return templates.TemplateResponse("diffusion/run_detail.html", {
+    return templates.TemplateResponse(request, "diffusion/run_detail.html", {
         "request": request,
         "title": f"Diffusion Run: {run_id}",
         "active": "diffusion",

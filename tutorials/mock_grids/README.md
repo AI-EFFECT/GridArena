@@ -93,32 +93,31 @@ The `/grid/validate` endpoint checks:
 
 A 20kV medium voltage distribution network with:
 
-- **10 MV nodes** — 1 substation (MV_SUB), 5 junctions, 4 connection points
+- **13 MV nodes** — 2 substations (MV_SUB, MV_SUB2), 6 junctions, 5 connection points
 - **3 cable types** — varying impedance and current ratings
-- **9 connections** — radial tree topology from the substation
-- **4 connection points** — where LV grids can be attached (CP1–CP4)
-- **4 transformers** — pre-defined MV/LV bridges (250–1000 kVA) with impedance data
+- **12 connections** — two radial feeders, plus a normally-open tie switch (MC12) between them
+- **5 connection points** — where LV grids can be attached (CP1–CP5)
+- **5 transformers** — pre-defined MV/LV bridges (250–1000 kVA) with impedance data
 
 ### Topology
 
 ```
-                MV_SUB (substation)
-               /       |       \
-            MV_N1    MV_N3    MV_N4
-           /    \      |         |
-        MV_N2  MV_CP1 MV_CP3  MV_CP4
-          |      (CP1)  (CP3)   (CP4)
-        MV_N5
-          |
-        MV_CP2
-         (CP2)
+          MV_SUB (substation)                   MV_SUB2 (substation)
+         /       |       \                            |
+      MV_N1    MV_N3    MV_N4                       MV_N6 ─── MV_CP5 (CP5)
+     /    \      |        |                           ┆
+  MV_N2  MV_CP1 MV_CP3  MV_CP4                        ┆
+    |    (CP1)  (CP3)   (CP4)                         ┆
+  MV_N5 ┄┄┄┄┄┄┄┄┄┄┄┄ MC12: normally-open tie ┄┄┄┄┄┄┄┄┄┄┘
+    |
+  MV_CP2 (CP2)
 ```
 
 ### How to use
 
 1. Go to **MV Grid** in the sidebar
 2. Upload `mv_grid_example.json`
-3. Click **Validate** to check the file — the preview shows 10 nodes, 9 connections, 4 connection points, 4 transformers
+3. Click **Validate** to check the file — the preview shows 13 nodes, 12 connections, 5 connection points, 5 transformers
 4. Click **Save to Database**
 5. Open the grid detail page
 6. Connect existing LV grids to the connection points:
@@ -143,11 +142,12 @@ A 20kV medium voltage distribution network with:
   ],
 
   "cables": [
-    {"cable_id": "string", "imp_real": 0.0, "imp_imag": 0.0, "nom_curr": 0.0}
+    {"cable_id": "string", "imp_real": 0.0, "imp_imag": 0.0, "nom_curr": 0.0, "cap_uf_per_km": 0.0, "emerg_curr": 0.0}
   ],
 
   "connections": [
-    {"connection_id": "string", "from_node_id": "string", "to_node_id": "string", "cable_id": "string", "length": 0.0}
+    {"connection_id": "string", "from_node_id": "string", "to_node_id": "string", "cable_id": "string", "length": 0.0,
+     "status": "active (optional)", "is_switch": false, "normally_open": false}
   ],
 
   "connection_points": [
@@ -164,8 +164,27 @@ A 20kV medium voltage distribution network with:
       "secondary_voltage_v": 230.0,
       "imp_real": 0.004,
       "imp_imag": 0.040,
-      "name": "optional"
+      "name": "optional",
+      "tap_pos": 0, "tap_step_pct": 2.5, "tap_min": -2, "tap_max": 2
     }
+  ],
+
+  "regulators": [
+    {"regulator_id": "string", "connection_id": "string (must exist in connections)",
+     "v_set_pu": 1.0, "deadband_pu": 0.02, "tap_step_pct": 0.625, "tap_min": -16, "tap_max": 16, "tap_pos": 0}
+  ],
+
+  "shunts": [
+    {"shunt_id": "string", "node_id": "string (must exist in nodes)",
+     "q_step_kvar": 300.0, "n_steps": 2, "step": 1, "status": "active", "name": "optional"}
+  ],
+
+  "ders": [
+    {"der_id": "string", "node_id": "string (must exist in nodes, not the substation)",
+     "type": "pv|wind|chp|battery|ev_hub|other", "s_rated_kva": 2000.0,
+     "profile": "solar|constant (optional)", "profile_value": 1.0,
+     "control_mode": "fixed_pf|q_v|p_v|voltage", "cos_phi": 1.0, "excitation": "under|over",
+     "v_set_pu": 1.02, "status": "active", "name": "optional"}
   ]
 }
 ```
@@ -175,7 +194,30 @@ A 20kV medium voltage distribution network with:
 The upload endpoint checks:
 - All `from_node_id` / `to_node_id` in connections reference existing nodes
 - All `cable_id` in connections reference existing cables
+- `normally_open` is only set on connections with `is_switch`
 - All `node_id` in connection points reference existing nodes
 - No duplicate `connection_point_id` values
 - All `connection_point_id` in transformers reference existing connection points
 - Transformer `primary_voltage_kv` matches the grid's `nominal_voltage_kv`
+- Transformer `tap_pos` lies within [`tap_min`, `tap_max`]
+- Every regulator's `connection_id` exists, with at most one regulator per connection
+- Every shunt's `node_id` exists, with no duplicate `shunt_id` values; `step` lies within [0, `n_steps`]
+- Every DER's `node_id` exists and isn't the substation, with no duplicate `der_id` values; a solar profile needs node coordinates
+
+Cable `cap_uf_per_km` (per-phase charging capacitance, µF/km at 50 Hz, ≥ 0) and
+`emerg_curr` (emergency rating, A, > 0) are optional; the example grid sets
+both. See [docs/api/mv-grid.md](../../docs/api/mv-grid.md) for units.
+
+Transformer `imp_real`/`imp_imag` are p.u. on the transformer rating; tap and
+regulator fields are optional (the example sets a +1 tap on `TR01` and a
+regulator on `MC04`).
+
+Shunts are capacitor banks (`q_step_kvar` > 0, kvar per step at nominal
+voltage) or reactors (< 0); the example has a 2 × 300 kvar bank `CB01` on
+`MV_N5` with one step in.
+
+DER are MV-connected generators (see [docs/api/mv-grid.md](../../docs/api/mv-grid.md)
+for every field). The example has a 2 MVA solar park `PV01` on `MV_N2` with
+Q(V) control, an 800 kVA CHP unit `CHP01` on `MV_N3` at 90 % output and
+cos φ 0.95 (over-excited), and a 1.5 MVA wind turbine `WT01` on `MV_N4` at
+60 % output holding its node at 1.01 p.u.

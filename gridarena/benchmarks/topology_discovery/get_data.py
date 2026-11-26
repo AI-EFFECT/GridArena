@@ -1,6 +1,5 @@
 """Helper functions for topology benchmark router"""
 
-import uuid
 from typing import Any, Dict, List, Tuple, Optional, Set
 
 from gridarena.benchmarks.general_noise import (
@@ -8,98 +7,6 @@ from gridarena.benchmarks.general_noise import (
     get_profile as _get_profile,
     corrupt_measurement_record as _corrupt_record,
 )
-
-def ensure_grid_anon_map_database(cursor) -> None:
-    """
-    Creates the persistent mapping table if it doesn't exist.
-    """
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS "GridAnonymisedMapping" (
-            grid_id TEXT PRIMARY KEY,
-            anonymised_grid_key TEXT UNIQUE NOT NULL
-        )
-        """
-    )
-
-
-def build_load_grid_anon_keys_for_grids(cursor, grid_ids: Set[str]) -> Dict[str, str]:
-    """
-    Ensures every grid_id in grid_ids has a persistent anonymised key.
-    Returns:
-        { real_grid_id -> anonymised_grid_key }
-    """
-    mapping: Dict[str, str] = {}
-
-    for grid_id in grid_ids:
-        cursor.execute(
-            """
-            SELECT anonymised_grid_key
-            FROM "GridAnonymisedMapping"
-            WHERE grid_id = %s
-            """,
-            (grid_id,),
-        )
-        row = cursor.fetchone()
-
-        if row and row[0]:
-            mapping[grid_id] = row[0]
-            continue
-
-        anon_key = str(uuid.uuid4())
-        cursor.execute(
-            """
-            INSERT INTO "GridAnonymisedMapping" (grid_id, anonymised_grid_key)
-            VALUES (%s, %s)
-            ON CONFLICT (grid_id)
-            DO UPDATE SET anonymised_grid_key = EXCLUDED.anonymised_grid_key
-            """,
-            (grid_id, anon_key),
-        )
-        mapping[grid_id] = anon_key
-
-    return mapping
-
-
-def get_real_grid_id_from_anon(cursor, anon_grid_id: str) -> str:
-    """
-    Maps anonymised_grid_key -> real grid_id.
-    Raises ValueError if anon_grid_id is not found in mapping.
-    """
-    cursor.execute(
-        """
-        SELECT grid_id
-        FROM "GridAnonymisedMapping"
-        WHERE anonymised_grid_key = %s
-        """,
-        (anon_grid_id,),
-    )
-    row = cursor.fetchone()
-    if not row:
-        raise ValueError(f"Invalid anonymised grid ID: {anon_grid_id}")
-    return row[0]
-
-
-def resolve_real_grid_id(cursor, maybe_anon_or_real: str) -> str:
-    """
-    If maybe_anon_or_real is an anonymised key, return the real grid_id.
-    Otherwise, assume it's already a real grid_id and return unchanged.
-
-    (This keeps backwards compatibility: you can still submit/score using real IDs.)
-    """
-    cursor.execute(
-        """
-        SELECT grid_id
-        FROM "GridAnonymisedMapping"
-        WHERE anonymised_grid_key = %s
-        """,
-        (maybe_anon_or_real,),
-    )
-    row = cursor.fetchone()
-    if row:
-        return row[0]
-    return maybe_anon_or_real
-
 
 def get_nodes_for_all_grids(cursor) -> Dict[str, Dict[str, int]]:
     """

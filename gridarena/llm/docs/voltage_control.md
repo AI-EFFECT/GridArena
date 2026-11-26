@@ -8,7 +8,7 @@ The Voltage Agent provides the Voltage Control Benchmark. The goal is to propose
 - **Overvoltage** (above 1.1 pu / 253V): typically caused by excess solar PV generation injecting power back into the grid
 - **Undervoltage** (below 0.9 pu / 207V): typically caused by heavy loads such as EV charging or industrial demand
 
-This is an optimisation problem: find the minimum corrective intervention that resolves all violations. The benchmark provides training scenarios with reference solutions, test scenarios where you must propose actions, and a scoring endpoint.
+This is an optimisation problem: find the minimum corrective intervention that resolves all violations. The benchmark provides training scenarios with reference solutions. The test snapshots are never downloaded: instead you submit a Python script defining `predict(snapshot)`, the server runs it on the hidden test snapshots and scores its corrective actions.
 
 ---
 
@@ -41,26 +41,47 @@ Use this when you want to develop or train a voltage control algorithm, understa
 
 ---
 
-### get_voltage_control_data
+### get_voltage_control_submission_template
 
-Use this when you want to get the actual test scenarios to run your control algorithm on. Reference solutions are hidden.
+Use this when you want to write a voltage control method to submit, or need to know the exact input and output format the submitted script must follow.
 
-**Parameters:**
-- `voltage_limit` (float, required): Same voltage limit used in training for consistency
-- `scenario` (string, optional, default=`"Overvoltages"`): The violation type to test on
-- `difficulty` (string, optional, default=`"clean"`): Use the same difficulty as training
+**Parameters:** none.
 
-**Returns:** Voltage snapshots with violations but without reference solutions. Node identifiers are anonymised.
+**Returns:** `filename` and `source` of the blank submission script.
 
 **How to interpret:**
-- Identify which nodes are in violation by comparing voltage magnitudes against the limit
-- Propose corrective actions per node: adjust active power (curtail generation or shed load), reactive power, or voltage setpoints
-- Preserve the anonymised node keys exactly when submitting — do not rename them
+- The script defines `predict(snapshot)`, called once per test snapshot (a grid at a timestamp with at least one violation)
+- `snapshot` has `datetime`, `scenario`, `voltage_limit`, `nominal_voltage` (230 V), `voltage_band` (0.05) and `measurements` (a list of `node_id`, `phase`, `power_active`, `power_reactive`, `voltage_magnitude`, `voltage_angle`)
+- It must return a list of actions `{node_id, phase, corrected_voltage, adjusted_power_active, adjusted_power_reactive}`, the format of the training reference solutions; a node it leaves out counts as unchanged
+- The template's default `predict` is a simple baseline; replace its body with the actual method
+- The script runs without network access, with numpy, pandas, scipy, networkx and torch available
+
+---
+
+### submit_voltage_control_script
+
+Use this when you want to evaluate a voltage control method on the hidden test data.
+
+**Parameters:**
+- `submission_name` (string, required): A label for this attempt (e.g. `"run_001"`); letters, digits, `_`, `-`, `.`
+- `code` (string, required): The full Python source, based on the submission template
+- `voltage_limit` (float, required): Voltage threshold (V) that selects the snapshots with violations, e.g. `241.5`
+- `scenario` (string, optional, default=`"Overvoltages"`): `"Overvoltages"` or `"Undervoltages"`
+- `difficulty` (string, optional, default=`"clean"`): Filters the snapshots by hardness
+
+**Returns:** The submission record with its `submission_id` and `status` (`queued`).
+
+**Notes:**
+- The script is checked for syntax errors and for a top-level `predict` function before it is queued
+- Evaluation runs in the background; use `get_voltage_control_submission` with the returned `submission_id` to follow it
+- The test data itself is never downloadable: only the submitted script sees it
 
 **Example:**
 ```json
 {
-  "voltage_limit": 230.0,
+  "submission_name": "run_001",
+  "code": "def predict(snapshot):\n    return [{'node_id': m['node_id'], 'phase': m['phase'], 'corrected_voltage': m['voltage_magnitude']} for m in snapshot['measurements']]\n",
+  "voltage_limit": 241.5,
   "scenario": "Overvoltages",
   "difficulty": "clean"
 }
@@ -68,79 +89,24 @@ Use this when you want to get the actual test scenarios to run your control algo
 
 ---
 
-### submit_voltage_control_guesses
+### get_voltage_control_submission
 
-Use this when you want to submit your proposed corrective actions and get them evaluated.
-
-**Parameters:**
-- `guess_id` (string, required): A unique identifier for this submission (e.g. `"run_001"`)
-- `grid_id` (string, required): The grid the submission is for
-- `guesses` (object, required): A mapping of anonymised scenario keys to arrays of corrective actions. Each action contains `node_id`, `phase`, `corrected_voltage`, `adjusted_power_active`, and `adjusted_power_reactive`.
-
-**Returns:** Confirmation of submission.
-
-**Notes:**
-- Anonymised keys from the test data must be preserved exactly as returned — do not rename them
-- All fields per action are required — partial actions are rejected
-- Use the same `guess_id` when retrieving the score
-
-**Example:**
-```json
-{
-  "guess_id": "run_001",
-  "grid_id": "grid001",
-  "guesses": {
-    "anon_key_1": [
-      {
-        "node_id": "N1",
-        "phase": "R",
-        "corrected_voltage": 230.0,
-        "adjusted_power_active": 5.0,
-        "adjusted_power_reactive": 1.2
-      },
-      {
-        "node_id": "N3",
-        "phase": "R",
-        "corrected_voltage": 229.5,
-        "adjusted_power_active": 3.0,
-        "adjusted_power_reactive": 0.8
-      }
-    ],
-    "anon_key_2": [
-      {
-        "node_id": "N5",
-        "phase": "S",
-        "corrected_voltage": 231.0,
-        "adjusted_power_active": -2.0,
-        "adjusted_power_reactive": 0.5
-      }
-    ]
-  }
-}
-```
-
----
-
-### get_voltage_control_score
-
-Use this when you want to evaluate how well your corrective actions resolved the voltage violations.
+Use this when you want to know whether a submitted script has finished and how well it did.
 
 **Parameters:**
-- `guess_id` (string, required): The ID used when submitting actions
-- `grid_id` (string, required): The grid the submission was for
+- `submission_id` (string, required): The ID returned by `submit_voltage_control_script`
 
-**Returns:** Performance score.
+**Returns:** The submission's `status` (`queued`, `running`, `completed`, `failed`), its `score` when completed, its `error` when failed, and `log_tail` (what the script printed, plus tracebacks).
 
 **How to interpret:**
-- Higher score = better performance
-- The score rewards resolving all violations while minimising the magnitude of interventions — large curtailments or load shedding are penalised
-- A perfect solution resolves every violation with the smallest possible power adjustment
-- If your score is low despite resolving violations, check whether your interventions are proportional to the violation severity
+- `score.score` is between 0 and 1, higher is better: the node-weighted mean of the snapshot scores
+- A snapshot with reference solutions rewards matching the reference corrected voltages (within 1 V), then the least total change in active power; without a reference it rewards moving voltages back towards nominal
+- `score.per_snapshot` gives each snapshot's score, scoring mode, reference-voltage error and effort; `score.per_grid` aggregates per test grid
+- When `status` is `failed`, read `error` and `log_tail` to fix the script and submit again
 
 **Example:**
 ```json
 {
-  "guess_id": "run_001",
-  "grid_id": "grid001"
+  "submission_id": "3f9c1a2b7d4e"
 }
 ```

@@ -46,7 +46,7 @@ git-ignored).
 | `DB_POOL_MAX_SIZE` | `10` | Maximum size of the PostgreSQL connection pool. |
 | `CORS_ORIGINS` | `http://localhost:5173` | Comma-separated list of allowed CORS origins. |
 | `LVGPLAY_ANGLE_UNIT` | `deg` | Unit used for voltage-angle values in benchmark noise generation: `deg` or `rad`. |
-| `LLM_API_URL` | `https://llm.example.com/api` | Base URL of the LLM backend used by the [Chat](api/chat.md) assistant. |
+| `LLM_API_URL` | *(empty)* | Base URL of an OpenAI-compatible LLM backend used by the [Chat](api/chat.md) assistant (e.g. `https://llm.example.com/api`). The chat is disabled until both this and `LLM_API_KEY` are set. |
 | `LLM_API_KEY` | *(empty)* | API key for the LLM backend. |
 | `LLM_MODEL` | `gemma4-31b` | Model name requested from the LLM backend. |
 | `LLM_VERIFY_SSL` | `false` | Whether to verify TLS certificates when calling the LLM backend. |

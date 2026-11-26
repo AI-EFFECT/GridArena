@@ -11,7 +11,8 @@
   <div class="dash-header">
     <div>
       <div class="section-title">Historical Database</div>
-      <p style="margin:0;"><strong>{{ database_id }}</strong></p>
+      <p style="margin:0;"><strong>{{ database_id }}</strong> <span class="badge badge--{{ data_type }}">{% if data_type == 'pv' %}&#9728; {% endif %}{{ data_type_label }}</span></p>
+      {% if data_type != 'load' %}<p class="muted" style="margin:2px 0 0;">{{ data_type_description[0] | upper }}{{ data_type_description[1:] }}: <code>power_active</code> is the power generated (positive = produced).</p>{% endif %}
       {% if name %}<p class="muted" style="margin:2px 0 0;">{{ name }}{% if description %} &mdash; {{ description }}{% endif %}</p>{% endif %}
       <div class="dash-header__meta">
         {{ series_items | length }} series &bull; {{ n_timestamps }} shared timestamps
@@ -99,7 +100,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="6" style="text-align:center; padding:24px; color:#6b7280;">No series in this database yet.</td></tr>
+      <tr><td colspan="6" style="text-align:center; padding:24px; color:var(--color-text-muted);">No series in this database yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>

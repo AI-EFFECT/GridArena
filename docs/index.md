@@ -31,9 +31,10 @@ part of the **AI-EFFECT** project.
   loop.
 - **Reinforcement learning** — train and evaluate RL agents against grid
   environments.
-- **AI benchmark suite** — download anonymised, difficulty-controlled data,
-  submit predictions, and retrieve reproducible scores for four benchmark tasks:
-  Phase Identification, Topology Discovery, State Estimation, and Voltage Control.
+- **AI benchmark suite** — download difficulty-controlled training data, then
+  submit a Python script that GridArena runs on hidden test data and scores
+  reproducibly, for four benchmark tasks: Phase Identification, Topology
+  Discovery, State Estimation, and Voltage Control.
 - **LLM chat assistant** — a retrieval-augmented chat interface over the platform's
   own documentation and data.
 

@@ -1,0 +1,671 @@
+{% extends "base.html" %}
+
+{% block head %}
+<link rel="stylesheet" href="/static/css/digital-twin-dashboard.css">
+<link rel="stylesheet" href="/static/css/grid-dashboard.css">
+<link rel="stylesheet" href="/static/css/pf-datagen.css">
+{% endblock %}
+
+{% block content %}
+
+<!-- Header -->
+<div class="panel">
+  <div class="grid-dash-header">
+    <div>
+      <h2>New Synthetic Dataset</h2>
+      <p>Generate power-flow training data for one or more MV grids: historical load curves are placed at each grid's connection points and the power flow is solved for every sample, stressed and out-of-limits states included. Every setting beyond the first two steps is off by default.</p>
+    </div>
+    <a href="/pf-datagen/ui" class="btn">Back to Overview</a>
+  </div>
+</div>
+
+<!-- Progress bar -->
+<div class="dt-progress" id="progressBar">
+  <div class="dt-progress__step dt-progress__step--active" data-step="1"><span>1</span> Grids</div>
+  <div class="dt-progress__step" data-step="2"><span>2</span> Load</div>
+  <div class="dt-progress__step" data-step="3"><span>3</span> DER</div>
+  <div class="dt-progress__step" data-step="4"><span>4</span> Set-points</div>
+  <div class="dt-progress__step" data-step="5"><span>5</span> Topology</div>
+  <div class="dt-progress__step" data-step="6"><span>6</span> Design</div>
+  <div class="dt-progress__step" data-step="7"><span>7</span> Measurements</div>
+  <div class="dt-progress__step" data-step="8"><span>8</span> Review</div>
+</div>
+
+<form id="pfDatagenForm" novalidate>
+
+<!-- ════════ Step 1: Grids ════════ -->
+<div class="dt-step dt-wizard-panel" id="step1">
+  <div class="dt-step__header">
+    <div class="dt-step__number">1</div>
+    <h4 class="dt-step__title">Select Grids</h4>
+  </div>
+  <p class="dt-step__desc">The MV grids to generate data for. Only the MV network is solved: loads sit behind each connection point's transformer, and no LV power flow runs. With more than one grid the runs start as a <strong>group</strong>, with one combined report and a split by grid; a group skips grids with fewer than 10 nodes or 3 connection points. Need other sizes, several feeders or ties? <a href="/pf-datagen/ui/synthetic-grids">Generate synthetic grids</a> first.</p>
+
+  <div class="grids-search">
+    <input type="text" id="pfGridSearch" placeholder="Search grids..." oninput="pfFilterGridChecklist()">
+  </div>
+  <div class="row-actions" style="margin-bottom:10px;">
+    <button type="button" class="btn" onclick="pfSelectAllVisible()">Select all (filtered)</button>
+    <button type="button" class="btn" onclick="pfClearSelection()">Clear selection</button>
+  </div>
+  <div id="pfGridChecklist" class="pf-checklist">
+    {% for g in mv_grids %}
+    <label class="pf-grid-row" data-grid-id="{{ g.mv_grid_id | lower }}">
+      <input type="checkbox" class="pfGridCheckbox" value="{{ g.mv_grid_id }}" onchange="pfUpdateSelectedCount()">
+      <strong>{{ g.mv_grid_id }}</strong>{% if g.name %} — {{ g.name }}{% endif %}
+      <span class="muted">({{ g.n_nodes }} nodes, {{ g.n_cps }} connection points, {{ g.n_connected }} connected LV)</span>
+    </label>
+    {% else %}
+    <p class="muted">No MV grids yet — upload one on the <a href="/mv_grid/ui">MV Grids</a> page, or generate synthetic ones.</p>
+    {% endfor %}
+  </div>
+  <p class="muted" id="pfSelectedCount" style="margin-top:8px;">0 grids selected</p>
+  <p class="pf-step-msg" id="stepMsg1"></p>
+
+  <div class="dt-wizard-nav">
+    <span></span>
+    <button type="button" class="btn btn-primary" onclick="goStep(2)">Next: Load</button>
+  </div>
+</div>
+
+<!-- ════════ Step 2: Load data ════════ -->
+<div class="dt-step dt-wizard-panel" id="step2" style="display:none;">
+  <div class="dt-step__header">
+    <div class="dt-step__number">2</div>
+    <h4 class="dt-step__title">Load Data</h4>
+  </div>
+  <p class="dt-step__desc">Where the load curves come from, which timestamps become samples, and how loaded and how varied each sample is.</p>
+
+  <h5 class="pf-sub">Data source</h5>
+  <p class="pf-sub-desc">A <a href="/historical/ui">Historical database</a> whose series share one grid level. <em>MV</em> and <em>Feeder</em> series populate every connection point (sized by its transformer rating); <em>LV</em> series populate the connection points with a real LV grid attached, summing one series per LV node.</p>
+  <div class="field">
+    <label style="min-width:240px;">Historical database</label>
+    <select id="pfHistoricalDatabase" class="input" style="width:340px;">
+      <option value="">Loading databases...</option>
+    </select>
+  </div>
+  <p class="muted" id="pfHistoricalDatabaseInfo" style="margin:0 0 8px;"></p>
+  <div class="field">
+    <label style="min-width:240px;" title="How many timestamps from the database's timeline become samples.">Total timesteps</label>
+    <input id="pfScenarioCount" class="input" type="number" value="1000" min="1" max="200000" style="width:120px;">
+  </div>
+  <div class="field">
+    <label style="min-width:240px;" title="Spread: timestamps evenly spread over the whole timeline. Window: consecutive timestamps, for forecasting datasets; its start is drawn from the seed unless given.">Timeline</label>
+    <select id="pfTimeline" class="input" style="width:200px;" onchange="pfTimelineChanged()">
+      <option value="spread" selected>Spread over the history</option>
+      <option value="window">Window (consecutive)</option>
+    </select>
+    <input id="pfTimelineStart" class="input" type="datetime-local" style="width:200px; display:none;" title="Window start (optional; drawn from the seed when empty)">
+  </div>
+  <div class="field">
+    <label style="min-width:240px;" title="Average the load over clock-aligned intervals (each labelled with its start: 15 min gives :00, :15, :30, :45) before it becomes samples. The samples then step at this interval, and generation data with a finer step is averaged over the same intervals. Use it to match coarser generation data (e.g. 15-min E-REDES) instead of interpolating it.">Load resolution</label>
+    <select id="pfLoadAggregation" class="input" style="width:200px;" onchange="pfPreviewSoon()">
+      <option value="" selected>The database's own step</option>
+      <option value="300">5-min averages</option>
+      <option value="600">10-min averages</option>
+      <option value="900">15-min averages</option>
+      <option value="1800">30-min averages</option>
+      <option value="3600">Hourly averages</option>
+    </select>
+  </div>
+  <div class="field">
+    <label style="min-width:240px;" title="Every this many consecutive samples share one random series-to-point assignment; the next block draws a new one.">Reassignment period</label>
+    <input id="pfReassignmentPeriod" class="input" type="number" value="100" min="1" step="1" style="width:120px;">
+  </div>
+
+  <h5 class="pf-sub">Load level</h5>
+  <p class="pf-sub-desc">How heavily loaded the grid is in each sample. <em>Multiplier</em> scales the historical load by a drawn factor; <em>Fraction of P_max</em> rescales each sample to a drawn fraction of P_max, the most demand the grid carries within its voltage and thermal limits (found by a search at the start of the run).</p>
+  <div class="field">
+    <label style="min-width:240px;">Mode</label>
+    <select id="pfLoadLevelMode" class="input" style="width:220px;" onchange="pfLoadLevelModeChanged()">
+      <option value="off" selected>Off (historical load)</option>
+      <option value="multiplier">Multiplier</option>
+      <option value="loadability">Fraction of P_max</option>
+    </select>
+  </div>
+  <div id="pfLoadLevelFields" style="display:none;">
+    <div class="field">
+      <label style="min-width:240px;" title="Empty = the mode's default (multiplier 0.5-1.5, P_max fraction 0.1-1.2).">Range (min - max)</label>
+      <input id="pfLoadLevelMin" class="input" type="number" step="0.01" min="0" max="10" style="width:76px;">
+      <input id="pfLoadLevelMax" class="input" type="number" step="0.01" min="0" max="10" style="width:76px;">
+    </div>
+    <div class="field">
+      <label style="min-width:240px;" title="Stratified: the range is split into bins and samples are spread evenly over them.">Sampling, bins</label>
+      <select id="pfLoadLevelSampling" class="input" style="width:160px;">
+        <option value="stratified" selected>Stratified</option>
+        <option value="uniform">Uniform</option>
+      </select>
+      <input id="pfLoadLevelBins" class="input" type="number" value="10" min="1" max="1000" style="width:76px;" title="Number of bins">
+    </div>
+  </div>
+
+  <h5 class="pf-sub">Load shape and noise</h5>
+  <p class="pf-sub-desc"><em>Rating</em> sizing takes only each series' shape and sizes each connection point by its transformer rating; <em>Auto</em> uses rating for MV / Feeder databases and the recorded values for LV. Missing reactive power is always filled from a drawn power factor. Noise is log-normal (mean 1); 0 turns each part off.</p>
+  <div class="field">
+    <label style="min-width:240px;">Point sizing, utilisation</label>
+    <select id="pfPointSizing" class="input" style="width:160px;">
+      <option value="auto" selected>Auto</option>
+      <option value="rating">Rating</option>
+      <option value="series">As recorded</option>
+    </select>
+    <input id="pfUtilisation" class="input" type="number" value="0.4" step="0.05" min="0.05" max="2" style="width:76px;" title="Load / transformer rating (rating sizing): the average or the peak, as chosen next">
+    <select id="pfSizeBy" class="input" style="width:170px;" onchange="pfSizeByChanged()" title="Average: utilisation is the point's mean |P| / rating. Peak: its 99th percentile of |P| / rating, so 99 % of the time the load (and any export) stays within utilisation x rating.">
+      <option value="mean" selected>of the average</option>
+      <option value="peak">of the peak (P99)</option>
+    </select>
+  </div>
+  <div class="field">
+    <label style="min-width:240px;" title="Feeder databases only. By transformer kVA: each point sums several distinct feeders, their number from its rating (100 kVA: 1-2, 250: 2-4, 630: 4-8, 1000: 6-12, 2000: 10-20, larger: 16-32).">Feeders per point</label>
+    <select id="pfFeedersPerPoint" class="input" style="width:200px;">
+      <option value="by_kva" selected>Several, by transformer kVA</option>
+      <option value="one">One</option>
+    </select>
+  </div>
+  <div class="field">
+    <label style="min-width:240px;" title="'Always' replaces the historical Q too.">Reactive power</label>
+    <select id="pfReactive" class="input" style="width:200px;">
+      <option value="series" selected>Historical Q</option>
+      <option value="pf">Always from power factor</option>
+    </select>
+  </div>
+  <div class="field">
+    <label style="min-width:240px;" title="Inductive, drawn per point per reassignment block.">Power factor (min - max)</label>
+    <input id="pfPfMin" class="input" type="number" value="0.90" step="0.01" min="0.01" max="1" style="width:76px;">
+    <input id="pfPfMax" class="input" type="number" value="0.99" step="0.01" min="0.01" max="1" style="width:76px;">
+  </div>
+  <div class="field">
+    <label style="min-width:240px;" title="Independent factor per load point and sample.">Local noise (sigma)</label>
+    <input id="pfLoadNoiseSigma" class="input" type="number" value="0" step="0.05" min="0" max="0.9" style="width:76px;">
+  </div>
+  <div class="field">
+    <label style="min-width:240px;" title="Noise correlated along the cables: strength (sigma) and correlation length (km).">Spatial noise (sigma, km)</label>
+    <input id="pfSpatialSigma" class="input" type="number" value="0" step="0.05" min="0" max="1.9" style="width:76px;">
+    <input id="pfCorrelationKm" class="input" type="number" value="2" step="0.1" min="0.1" max="1000" style="width:76px;">
+  </div>
+  <div class="field">
+    <label style="min-width:240px;" title="Extra noise on Q only, so the power factor varies.">Q noise (sigma)</label>
+    <input id="pfQSigma" class="input" type="number" value="0" step="0.05" min="0" max="1.9" style="width:76px;">
+  </div>
+  <p class="pf-step-msg" id="stepMsg2"></p>
+
+  <div class="dt-wizard-nav">
+    <button type="button" class="btn" onclick="goStep(1)">Back</button>
+    <button type="button" class="btn btn-primary" onclick="goStep(3)">Next: DER</button>
+  </div>
+</div>
+
+<!-- ════════ Step 3: DER ════════ -->
+<div class="dt-step dt-wizard-panel" id="step3" style="display:none;">
+  <div class="dt-step__header">
+    <div class="dt-step__number">3</div>
+    <h4 class="dt-step__title">DER</h4>
+  </div>
+  <p class="dt-step__desc">The generators in each sample: the grid's own, plants you add, or both. Added plants follow the time series of a <a href="/historical/ui">historical generation database</a> (PV, wind, hydro, ...).</p>
+
+  <div class="field">
+    <label style="min-width:240px;">Source</label>
+    <select id="pfDerSource" class="input" style="width:240px;" onchange="pfDerToggle()">
+      <option value="grid" selected>Grid's own DER only</option>
+      <option value="add">Add to the grid's DER</option>
+      <option value="replace">Generated DER only</option>
+    </select>
+  </div>
+
+  <div class="pf-card" id="pfGridDerCard">
+    <div class="pf-card__head"><h5>Grid's own DER</h5></div>
+    <div class="pf-card__body">
+      <ul class="pf-device-list" id="pfGridDerList"><li class="muted">Select grids in step 1.</li></ul>
+      <label class="pf-check" title="Redraw the control mode and settings of the grid's own DER per sample, from the type's mode mix."><input type="checkbox" id="pfDerResample"> Redraw their control settings per sample</label>
+    </div>
+  </div>
+
+  <div id="pfDerFields" style="display:none;">
+    <h5 class="pf-sub">Plants</h5>
+    <p class="pf-sub-desc"><em>Aggregated</em> data are the summed output of many plants (e.g. E-REDES' injection by technology): each plant follows the aggregate's shape, normalised by its maximum in the reference year, with its own performance factor and slowly varying random adjustment. <em>Individual</em> data hold one plant per series, used as recorded and rated at its maximum. Each grid draws its own number of plants in a group's range (min = max for a fixed number). <em>Mixed</em> control draws each plant's mode from its type's usual mix.</p>
+    <div class="pf-table-wrap">
+      <table class="pf-groups">
+        <thead>
+          <tr>
+            <th title="Each grid draws its own number of plants in this range">Plants (min – max)</th><th>Each (MW)</th><th>Generation database</th><th>Data are</th><th>Placement</th><th>Control</th><th><span class="sr-only">Remove</span></th>
+          </tr>
+        </thead>
+        <tbody id="pfDerGroups"></tbody>
+      </table>
+    </div>
+    <div class="pf-groups-foot">
+      <button type="button" class="btn btn-sm" onclick="pfAddGroup()">+ Add group</button>
+      <span class="pf-total" id="pfDerTotal"></span>
+    </div>
+
+    <h5 class="pf-sub">Time matching</h5>
+    <p class="pf-sub-desc">Where the generation window starts, matched to the load window's first timestamp; the same shift applies to every database. Empty: the same instants as the load. The sparser of the load and the generation is interpolated; a gap in the generation data borrows the same clock time from the nearest day with data.</p>
+    <div class="field">
+      <label style="min-width:240px;">Generation window start</label>
+      <input id="pfDerHistStart" class="input" type="datetime-local" style="width:200px;" onchange="pfPreviewSoon()">
+      <label class="pf-check" style="margin-left:10px;" title="Round the shift to whole days, so day and night line up with the load's clock"><input type="checkbox" id="pfDerHistKeepTod" checked onchange="pfPreviewSoon()"> keep time of day</label>
+    </div>
+    <div class="field">
+      <label style="min-width:240px;" title="Clock of the generation databases' timestamps. The E-REDES imports are in UTC; the load is in the run's time zone (Europe/Lisbon).">Database clock</label>
+      <input id="pfDerHistTz" class="input" type="text" value="UTC" style="width:200px;" onchange="pfPreviewSoon()">
+    </div>
+    <div class="field">
+      <label style="min-width:240px;" title="Per sample: the plants move to new nodes every sample. Once per run: one fixed set-up, as a time series needs.">Placement</label>
+      <select id="pfDerLayout" class="input" style="width:200px;">
+        <option value="per_sample" selected>New per sample</option>
+        <option value="per_run">Once per run</option>
+      </select>
+      <span class="pf-note" id="pfDerLayoutNote"></span>
+    </div>
+
+    <div class="pf-preview" id="pfGenPreview">
+      <div class="pf-preview__info" id="pfGenInfo"></div>
+      <div class="pf-preview__chart" id="pfGenChart"></div>
+      <div class="pf-preview__readout" id="pfGenReadout"></div>
+    </div>
+
+    <details class="pf-panel" id="pfVarPanel">
+      <summary>Plant variation <span class="pf-panel__sum" id="pfVarSummary"></span></summary>
+      <div class="pf-panel__body">
+        <div class="field">
+          <label style="min-width:240px;" title="Each plant's fixed performance factor is drawn once from this range">Performance factor (min - max)</label>
+          <input id="pfDerHistPerfMin" class="input" type="number" value="0.90" step="0.01" min="0.01" max="1.5" style="width:76px;">
+          <input id="pfDerHistPerfMax" class="input" type="number" value="1.00" step="0.01" min="0.01" max="1.5" style="width:76px;">
+        </div>
+        <div class="field">
+          <label style="min-width:240px;" title="The plants' random adjustment: AR(1) with this correlation between 15-minute steps and this stationary standard deviation">Variation: rho (per 15 min), sigma</label>
+          <input id="pfDerHistRho" class="input" type="number" value="0.85" step="0.01" min="0" max="0.99" style="width:76px;">
+          <input id="pfDerHistSigma" class="input" type="number" value="0.08" step="0.01" min="0" max="0.99" style="width:76px;">
+        </div>
+        <div class="field">
+          <label style="min-width:240px;" title="The year whose maximum normalises an aggregated profile (one denominator for every plant). Empty: each database's best-covered year.">Reference year</label>
+          <input id="pfDerHistRefYear" class="input" type="number" min="1900" max="2200" placeholder="auto" style="width:96px;">
+        </div>
+      </div>
+    </details>
+
+    <details class="pf-panel" id="pfCtrlPanel">
+      <summary>Control settings <span class="pf-panel__sum" id="pfCtrlSummary"></span></summary>
+      <div class="pf-panel__body">
+        <div class="field">
+          <label style="min-width:240px;" title="Drawn per plant for fixed cos phi and P(V) control">cos φ (min - max)</label>
+          <input id="pfDerCosMin" class="input" type="number" value="0.95" step="0.01" min="0.5" max="1" style="width:76px;">
+          <input id="pfDerCosMax" class="input" type="number" value="1.00" step="0.01" min="0.5" max="1" style="width:76px;">
+        </div>
+        <div class="field">
+          <label style="min-width:240px;" title="Drawn per plant for voltage control">Voltage set-point (min - max, p.u.)</label>
+          <input id="pfDerVsetMin" class="input" type="number" value="0.99" step="0.005" min="0.9" max="1.1" style="width:76px;">
+          <input id="pfDerVsetMax" class="input" type="number" value="1.03" step="0.005" min="0.9" max="1.1" style="width:76px;">
+        </div>
+      </div>
+    </details>
+  </div>
+  <p class="pf-step-msg" id="stepMsg3"></p>
+
+  <div class="dt-wizard-nav">
+    <button type="button" class="btn" onclick="goStep(2)">Back</button>
+    <button type="button" class="btn btn-primary" onclick="goStep(4)">Next: Set-points</button>
+  </div>
+</div>
+
+<!-- ════════ Step 4: Set-points ════════ -->
+<div class="dt-step dt-wizard-panel" id="step4" style="display:none;">
+  <div class="dt-step__header">
+    <div class="dt-step__number">4</div>
+    <h4 class="dt-step__title">Set-points</h4>
+  </div>
+  <p class="dt-step__desc">The operating set-points of each device type in every sample. The counts are for the grids selected in step 1.</p>
+
+  <div class="pf-cards">
+    <div class="pf-card" data-device="substations">
+      <div class="pf-card__head"><h5>Busbar</h5><span class="pf-count" data-count="substations"></span></div>
+      <div class="pf-card__body">
+        <p class="pf-sub-desc">The substation busbar is an ideal source. <em>Load-dependent</em> raises it with the load level, as operators and line-drop compensation do.</p>
+        <div class="field">
+          <label>Voltage</label>
+          <select id="pfSlackMode" class="input" style="width:200px;" onchange="pfSlackModeChanged()">
+            <option value="" selected>Fixed 1.0 p.u.</option>
+            <option value="uniform">Drawn from a range</option>
+            <option value="load_dependent">Load-dependent</option>
+          </select>
+        </div>
+        <div class="field" id="pfSlackRangeField" style="display:none;">
+          <label>Range (p.u.)</label>
+          <input id="pfSlackMin" class="input" type="number" value="0.98" step="0.005" min="0.81" max="1.19" style="width:76px;" oninput="pfDrawSlack()">
+          <input id="pfSlackMax" class="input" type="number" value="1.04" step="0.005" min="0.81" max="1.19" style="width:76px;" oninput="pfDrawSlack()">
+        </div>
+        <div id="pfSlackLoadField" style="display:none;">
+          <div class="field">
+            <label title="Set-point at no load and at the feeder's limit (P_max)">No load, at P_max</label>
+            <input id="pfSlackV0" class="input" type="number" value="1.00" step="0.005" min="0.81" max="1.19" style="width:68px;" oninput="pfDrawSlack()">
+            <input id="pfSlackV1" class="input" type="number" value="1.04" step="0.005" min="0.81" max="1.19" style="width:68px;" oninput="pfDrawSlack()">
+          </div>
+          <div class="field">
+            <label title="Uniform noise added per sample (p.u.)">Noise ±</label>
+            <input id="pfSlackNoise" class="input" type="number" value="0.01" step="0.005" min="0" max="0.19" style="width:68px;" oninput="pfDrawSlack()">
+          </div>
+        </div>
+        <label class="pf-check" title="An independent draw for each substation"><input type="checkbox" id="pfSlackPerSub"> Per substation</label>
+        <div class="pf-mini-chart" id="pfSlackChart" aria-label="Busbar set-point against load level"></div>
+      </div>
+    </div>
+
+    <div class="pf-card" data-device="capacitor_banks">
+      <div class="pf-card__head"><h5>Capacitor banks</h5><span class="pf-count" data-count="capacitor_banks"></span></div>
+      <div class="pf-card__body">
+        <p class="pf-sub-desc"><em>Fixed</em>: the grid's step. <em>Random</em>: 0 to n steps per bank and sample. <em>Voltage-controlled</em>: each bank switches steps to keep its node inside the band.</p>
+        <div class="field">
+          <label>Steps</label>
+          <select id="pfShuntSteps" class="input" style="width:200px;" onchange="pfShuntChanged()">
+            <option value="fixed" selected>Fixed</option>
+            <option value="random">Random steps</option>
+            <option value="voltage">Voltage-controlled</option>
+          </select>
+        </div>
+        <div class="field" id="pfShuntBandField" style="display:none;">
+          <label>Band (p.u.)</label>
+          <input id="pfShuntBandMin" class="input" type="number" value="0.97" step="0.005" min="0.81" max="1.19" style="width:68px;">
+          <input id="pfShuntBandMax" class="input" type="number" value="1.03" step="0.005" min="0.81" max="1.19" style="width:68px;">
+        </div>
+      </div>
+    </div>
+
+    <div class="pf-card" data-device="regulators">
+      <div class="pf-card__head"><h5>Voltage regulators</h5><span class="pf-count" data-count="regulators"></span></div>
+      <div class="pf-card__body">
+        <label class="pf-check" title="Draw each regulator's set-point, deadband and starting tap per sample."><input type="checkbox" id="pfRegResample"> Redraw per sample</label>
+        <div data-show-when="pfRegResample">
+          <div class="field">
+            <label>Set-point (p.u.)</label>
+            <input id="pfRegVMin" class="input" type="number" value="0.98" step="0.005" min="0.81" max="1.19" style="width:68px;">
+            <input id="pfRegVMax" class="input" type="number" value="1.03" step="0.005" min="0.81" max="1.19" style="width:68px;">
+          </div>
+          <div class="field">
+            <label>Deadband (p.u.)</label>
+            <input id="pfRegDbMin" class="input" type="number" value="0.015" step="0.005" min="0.001" max="0.19" style="width:68px;">
+            <input id="pfRegDbMax" class="input" type="number" value="0.025" step="0.005" min="0.001" max="0.19" style="width:68px;">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pf-card" data-device="transformers">
+      <div class="pf-card__head"><h5>MV/LV transformers</h5><span class="pf-count" data-count="transformers"></span></div>
+      <div class="pf-card__body">
+        <label class="pf-check" title="Draw each MV/LV transformer's off-load tap per topology variant."><input type="checkbox" id="pfTapResample"> Redraw off-load taps per variant</label>
+        <div class="field" data-show-when="pfTapResample">
+          <label title="Draw within this many steps either side of nominal (tap 0), inside each transformer's range. Empty: the full range.">Within ± steps of nominal</label>
+          <input id="pfTapSteps" class="input" type="number" min="0" max="50" placeholder="full range" style="width:96px;">
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="pf-step-msg" id="stepMsg4"></p>
+
+  <div class="dt-wizard-nav">
+    <button type="button" class="btn" onclick="goStep(3)">Back</button>
+    <button type="button" class="btn btn-primary" onclick="goStep(5)">Next: Topology &amp; parameters</button>
+  </div>
+</div>
+
+<!-- ════════ Step 5: Topology & parameters ════════ -->
+<div class="dt-step dt-wizard-panel" id="step5" style="display:none;">
+  <div class="dt-step__header">
+    <div class="dt-step__number">5</div>
+    <h4 class="dt-step__title">Topology &amp; Parameters</h4>
+  </div>
+  <p class="dt-step__desc">Which network each sample is solved on. Each <em>topology variant</em> is a configuration plus an outage set; every sample is solved on every variant unless you limit it below. Islanded parts are kept and flagged, not dropped.</p>
+
+  <h5 class="pf-sub">Outages</h5>
+  <p class="pf-sub-desc"><em>Exhaustive N-k</em> enumerates every combination of up to k branches out of service; <em>Random</em> draws a number of distinct outage sets of 1 to k branches. Per-sample outages trip DER, take capacitor banks out and bypass regulators.</p>
+  <div class="field">
+    <label style="min-width:240px;">Branch outages</label>
+    <select id="pfTopologyType" class="input" style="width:220px;" onchange="pfDatagenToggleTopologyFields()">
+      <option value="none" selected>None</option>
+      <option value="n_minus_k">Exhaustive N-k</option>
+      <option value="random">Random</option>
+    </select>
+  </div>
+  <div id="pfTopologyFields" style="display:none;">
+    <div class="field">
+      <label style="min-width:240px;" title="An infeasibly large k for exhaustive N-k is rejected with an error.">Max simultaneous outages (k)</label>
+      <input id="pfTopologyK" class="input" type="number" value="1" min="1" style="width:76px;">
+    </div>
+    <div class="field" id="pfNVariantsField">
+      <label style="min-width:240px;">Random variants</label>
+      <input id="pfNVariants" class="input" type="number" value="10" min="1" max="2000" style="width:76px;">
+    </div>
+  </div>
+  <div class="field">
+    <label style="min-width:240px;" title="MV/LV transformers become outage candidates too">Transformer outages</label>
+    <input type="checkbox" id="pfOutTransformers">
+  </div>
+  <div class="field">
+    <label style="min-width:240px;" title="Probability per unit and per sample: a DER trips, a capacitor bank is out, a regulator is bypassed (tap 0)">Per sample: DER, banks, regulators</label>
+    <input id="pfOutDer" class="input" type="number" value="0" step="0.01" min="0" max="1" style="width:68px;">
+    <input id="pfOutShunt" class="input" type="number" value="0" step="0.01" min="0" max="1" style="width:68px;">
+    <input id="pfOutReg" class="input" type="number" value="0" step="0.01" min="0" max="1" style="width:68px;">
+  </div>
+  <div class="field">
+    <label style="min-width:240px;" title="Empty: every sample on every topology variant. A number: each sample on that many variants, spread evenly.">Variants per sample</label>
+    <input id="pfVarPerSample" class="input" type="number" min="1" placeholder="all" style="width:76px;">
+  </div>
+
+  <h5 class="pf-sub">Reconfiguration</h5>
+  <p class="pf-sub-desc">Random radial configurations, drawn uniformly and all distinct. Grids without switches need ties first (<em>Suggest tie lines</em> on the grid page) or <em>All MV lines</em>.</p>
+  <div class="field">
+    <label style="min-width:240px;" title="Configurations drawn besides the base one">Reconfigurations</label>
+    <input type="checkbox" id="pfReconfEnabled">
+    <input id="pfReconfN" class="input" type="number" value="10" min="1" max="1000" style="width:76px;" data-show-when="pfReconfEnabled">
+  </div>
+  <div data-show-when="pfReconfEnabled">
+    <div class="field">
+      <label style="min-width:240px;" title="Switches and ties: only the connections the grid marks as switchable. All MV lines: any line can open, as if every section had a disconnector.">Switchable</label>
+      <select id="pfReconfSwitchable" class="input" style="width:220px;">
+        <option value="marked" selected>Switches and ties</option>
+        <option value="all_lines">All MV lines</option>
+      </select>
+    </div>
+    <div class="field">
+      <label style="min-width:240px;" title="Close this many more open switches on top of each radial configuration (needs Newton-Raphson)">Meshed: extra closed</label>
+      <input type="checkbox" id="pfReconfMeshed">
+      <input id="pfReconfExtra" class="input" type="number" value="1" min="1" max="20" style="width:76px;">
+    </div>
+  </div>
+  <div class="field">
+    <label style="min-width:240px;" title="Sweep: radial networks only. Newton-Raphson: any topology (loops, closed ties, several substations).">Solver</label>
+    <select id="pfSolver" class="input" style="width:240px;">
+      <option value="sweep" selected>Sweep (radial)</option>
+      <option value="newton">Newton-Raphson (any topology)</option>
+    </select>
+  </div>
+
+  <h5 class="pf-sub">Parameters</h5>
+  <p class="pf-sub-desc">Uncertainty in the branch parameters. Length scales R, X and charging together; temperature changes R only (stored R is at 20 °C); a swap replaces a line's cable type by another of its family (underground or overhead), ratings included. The admittance perturbation redraws every branch's R and X within ± sigma.</p>
+  <div class="field">
+    <label style="min-width:240px;" title="Each line's length x 1 ± this">Line length ±</label>
+    <input type="checkbox" id="pfParLength">
+    <input id="pfParLengthSigma" class="input" type="number" value="0.05" step="0.01" min="0.01" max="0.49" style="width:68px;" data-show-when="pfParLength">
+  </div>
+  <div class="field">
+    <label style="min-width:240px;" title="One conductor temperature per sample in [min, max], plus a per-cable offset within ± spread">Temperature: min, max, spread (°C)</label>
+    <input type="checkbox" id="pfParTemp">
+    <span data-show-when="pfParTemp" class="pf-inline">
+      <input id="pfParTempMin" class="input" type="number" value="20" step="1" min="-30" max="120" style="width:60px;">
+      <input id="pfParTempMax" class="input" type="number" value="70" step="1" min="-30" max="120" style="width:60px;">
+      <input id="pfParTempSpread" class="input" type="number" value="5" step="1" min="0" max="30" style="width:60px;">
+    </span>
+  </div>
+  <div class="field">
+    <label style="min-width:240px;" title="Probability that a line's cable type is replaced within its family">Cable swaps</label>
+    <input type="checkbox" id="pfParSwap">
+    <input id="pfParSwapP" class="input" type="number" value="0.1" step="0.05" min="0.01" max="1" style="width:68px;" data-show-when="pfParSwap">
+  </div>
+  <div class="field">
+    <label style="min-width:240px;" title="MV/LV transformer impedance magnitude x 1 ± uk, and X/R x 1 ± X/R">Transformers: uk ±, X/R ±</label>
+    <input type="checkbox" id="pfParTrafo">
+    <span data-show-when="pfParTrafo" class="pf-inline">
+      <input id="pfParUk" class="input" type="number" value="0.1" step="0.01" min="0.01" max="0.49" style="width:68px;">
+      <input id="pfParXr" class="input" type="number" value="0.2" step="0.01" min="0.01" max="0.89" style="width:68px;">
+    </span>
+  </div>
+  <div class="field">
+    <label style="min-width:240px;" title="Length, swaps and transformers. Temperature is always drawn per sample.">Drawn</label>
+    <select id="pfParDraw" class="input" style="width:220px;">
+      <option value="per_variant" selected>Per topology variant</option>
+      <option value="per_sample">Per sample</option>
+    </select>
+  </div>
+  <div class="field">
+    <label style="min-width:240px;" title='Extra cable types for swaps: a JSON list of {"cable_id", "r_ohm_per_km", "x_ohm_per_km", "nom_curr_a", "cap_uf_per_km", "emerg_curr_a"}'>Extra cable types (JSON)</label>
+    <input type="file" id="pfParCatalogue" accept=".json,application/json">
+  </div>
+  <div class="field">
+    <label style="min-width:240px;">Admittance perturbation ±</label>
+    <input type="checkbox" id="pfAdmittanceEnabled">
+    <input id="pfAdmittanceSigma" class="input" type="number" value="0.2" step="0.05" min="0.05" max="0.95" style="width:68px;" data-show-when="pfAdmittanceEnabled">
+  </div>
+  <p class="pf-step-msg" id="stepMsg5"></p>
+
+  <div class="dt-wizard-nav">
+    <button type="button" class="btn" onclick="goStep(4)">Back</button>
+    <button type="button" class="btn btn-primary" onclick="goStep(6)">Next: Sampling design</button>
+  </div>
+</div>
+
+<!-- ════════ Step 6: Sampling design ════════ -->
+<div class="dt-step dt-wizard-panel" id="step6" style="display:none;">
+  <div class="dt-step__header">
+    <div class="dt-step__number">6</div>
+    <h4 class="dt-step__title">Sampling Design</h4>
+  </div>
+  <p class="dt-step__desc">How the drawn quantities (load level, DER penetration, busbar set-point) pair up across samples, and whether the run should reach a share of samples with violations.</p>
+
+  <h5 class="pf-sub">Design</h5>
+  <p class="pf-sub-desc"><em>Independent</em>: each quantity is stratified on its own. <em>Latin hypercube</em>: one design with little correlation between them. <em>Factorial</em>: every combination of their bins filled equally (needs at least as many samples as combinations).</p>
+  <div class="field">
+    <label style="min-width:240px;">Design</label>
+    <select id="pfDesignMode" class="input" style="width:220px;">
+      <option value="independent" selected>Independent</option>
+      <option value="lhs">Latin hypercube</option>
+      <option value="factorial">Factorial</option>
+    </select>
+  </div>
+
+  <h5 class="pf-sub">Target mix</h5>
+  <p class="pf-sub-desc">Solves a pilot first, then oversamples the load levels that produce violations until the share is reached. Every sample gets a <code>design_weight</code> that undoes the oversampling. Needs a load level (step 2).</p>
+  <div class="field">
+    <label style="min-width:240px;" title="Minimum share of samples with a violation">Target violation share</label>
+    <input type="checkbox" id="pfTargetEnabled">
+    <span data-show-when="pfTargetEnabled" class="pf-inline">
+      <input id="pfTargetShare" class="input" type="number" value="0.15" step="0.05" min="0.01" max="0.99" style="width:68px;">
+      <select id="pfTargetViolations" class="input" style="width:120px;">
+        <option value="any" selected>Any</option>
+        <option value="voltage">Voltage</option>
+        <option value="thermal">Thermal</option>
+      </select>
+    </span>
+  </div>
+  <div class="field" data-show-when="pfTargetEnabled">
+    <label style="min-width:240px;" title="Share of samples solved first to measure the violation rates">Pilot share</label>
+    <input id="pfTargetPilot" class="input" type="number" value="0.2" step="0.05" min="0.05" max="0.5" style="width:68px;">
+  </div>
+  <p class="pf-step-msg" id="stepMsg6"></p>
+
+  <div class="dt-wizard-nav">
+    <button type="button" class="btn" onclick="goStep(5)">Back</button>
+    <button type="button" class="btn btn-primary" onclick="goStep(7)">Next: Measurements</button>
+  </div>
+</div>
+
+<!-- ════════ Step 7: Measurements ════════ -->
+<div class="dt-step dt-wizard-panel" id="step7" style="display:none;">
+  <div class="dt-step__header">
+    <div class="dt-step__number">7</div>
+    <h4 class="dt-step__title">Measurement View</h4>
+  </div>
+  <p class="dt-step__desc">Next to each clean solution, the readings of a meter layout drawn once per run: the substation busbar voltage and the feeder heads always; a share of connection points (voltage, and P, Q through the transformer); every switch and a share of the other cables (P, Q, current); DER above a size. Readings get relative noise and rare outliers from a profile, some go missing, and unmetered connection points get P, Q pseudo-measurements. For a forecasting dataset, use the <em>Window</em> timeline (step 2) and leave the per-sample random settings off.</p>
+
+  <div class="field">
+    <label style="min-width:240px;">Measurements</label>
+    <input type="checkbox" id="pfMeasEnabled">
+  </div>
+  <div data-show-when="pfMeasEnabled">
+    <div class="field">
+      <label style="min-width:240px;" title="Share of connection points metered; share of the other cables metered">Coverage: points, cables</label>
+      <input id="pfMeasCp" class="input" type="number" value="0.3" step="0.05" min="0" max="1" style="width:68px;">
+      <input id="pfMeasCable" class="input" type="number" value="0.1" step="0.05" min="0" max="1" style="width:68px;">
+    </div>
+    <div class="field">
+      <label style="min-width:240px;" title="DER of at least this rating are metered">DER from (MVA)</label>
+      <input id="pfMeasDer" class="input" type="number" value="1" step="0.1" min="0" style="width:68px;">
+    </div>
+    <div class="field">
+      <label style="min-width:240px;" title="Noise profile of the meters; of the substation busbar and feeder heads">Noise: meters, substation</label>
+      <select id="pfMeasProfile" class="input" style="width:110px;">
+        <option value="clean">Clean</option>
+        <option value="easy">Easy</option>
+        <option value="medium" selected>Medium</option>
+        <option value="hard">Hard</option>
+      </select>
+      <select id="pfMeasSubProfile" class="input" style="width:110px;">
+        <option value="clean">Clean</option>
+        <option value="easy" selected>Easy</option>
+        <option value="medium">Medium</option>
+        <option value="hard">Hard</option>
+      </select>
+    </div>
+    <div class="field">
+      <label style="min-width:240px;" title="Probability a reading is missing; relative error of the pseudo-measurements">Missing, pseudo error</label>
+      <input id="pfMeasMissing" class="input" type="number" value="0.02" step="0.01" min="0" max="0.99" style="width:68px;">
+      <input id="pfMeasPseudo" class="input" type="number" value="0.3" step="0.05" min="0" max="2" style="width:68px;">
+    </div>
+  </div>
+  <p class="pf-step-msg" id="stepMsg7"></p>
+
+  <div class="dt-wizard-nav">
+    <button type="button" class="btn" onclick="goStep(6)">Back</button>
+    <button type="button" class="btn btn-primary" onclick="goStep(8)">Next: Review</button>
+  </div>
+</div>
+
+<!-- ════════ Step 8: Review & start ════════ -->
+<div class="dt-step dt-wizard-panel" id="step8" style="display:none;">
+  <div class="dt-step__header">
+    <div class="dt-step__number">8</div>
+    <h4 class="dt-step__title">Review &amp; Start</h4>
+  </div>
+
+  <div class="dt-review">
+    <h4>Configuration summary</h4>
+    <dl class="dt-review-grid" id="reviewGrid"></dl>
+  </div>
+  <ul class="pf-problems" id="reviewProblems"></ul>
+
+  <h5 class="pf-sub">Run settings</h5>
+  <div class="field">
+    <label style="min-width:240px;" title="Base random seed; empty draws a fresh one (stored with the run).">Seed (optional)</label>
+    <input id="pfSeed" class="input" type="number" style="width:120px;">
+  </div>
+  <div class="field">
+    <label style="min-width:240px;" title="Samples written to the database per commit">Chunk commit size</label>
+    <input id="pfChunkCommitSize" class="input" type="number" value="100" min="1" max="5000" style="width:120px;">
+  </div>
+
+  <div class="dt-wizard-nav">
+    <button type="button" class="btn" onclick="goStep(7)">Back</button>
+    <button id="pfPackageBtn" class="btn" type="button"
+            title="Build the grid(s) and load scenarios here, and download them with the solver code, run.py and how_to_run.md, to generate the dataset on any machine with Python">Download standalone package</button>
+    <button id="pfStartBtn" class="btn btn-primary" type="submit">Start</button>
+  </div>
+  <p class="muted" id="pfDatagenMsg" style="margin-top:8px;"></p>
+  <p class="muted" style="margin-top:4px;">Start runs the generation here. The standalone package
+    generates the same dataset elsewhere: unzip it and run <code>python run.py</code>.</p>
+</div>
+
+</form>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/pf-datagen-wizard.js"></script>
+{% endblock %}

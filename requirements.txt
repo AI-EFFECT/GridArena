@@ -1,7 +1,9 @@
 -e .
 
 # Web framework
-fastapi>=0.115
+# Upper bound: tested with FastAPI 0.148 / Starlette 1.9. Raise it only after
+# checking the HTML pages still render (Starlette changes TemplateResponse).
+fastapi>=0.115,<0.149
 uvicorn[standard]>=0.30
 jinja2>=3.1
 python-multipart>=0.0.9  # required by FastAPI for File(...)/Form(...) upload endpoints
@@ -16,6 +18,9 @@ psycopg-pool>=3.2
 # Data processing
 numpy>=1.24
 pandas>=2.0
+scipy>=1.10  # sparse Newton-Raphson power flow (PF datagen)
+threadpoolctl>=3.1  # PF datagen holds BLAS to one thread (many tiny solves)
+tzdata>=2024.1  # IANA time zones for zoneinfo where the OS has none (PF datagen's PV profile)
 
 # Visualization
 matplotlib>=3.7

@@ -29,7 +29,7 @@
       chip.title = 'Remove ' + gid;
       chip.style.cursor = 'pointer';
       if (!knownGrids.has(gid)) {
-        chip.style.borderColor = '#f59e0b';
+        chip.style.borderColor = 'var(--color-warning)';
         chip.title = gid + ' is not in the known grid list — training will fail if it does not exist. Click to remove.';
       }
       chip.addEventListener('click', function () { removeGrid(gid); });
@@ -275,12 +275,9 @@
   // ── Poll active runs ──
 
   var hasActive = false;
-  document.querySelectorAll('#runsTable tbody tr').forEach(function (row) {
-    var cells = row.cells;
-    if (cells && cells[6]) {
-      var txt = cells[6].textContent.trim().toLowerCase();
-      if (txt === 'queued' || txt === 'running') hasActive = true;
-    }
+  document.querySelectorAll('#runsTable [data-status]').forEach(function (badge) {
+    var st = badge.getAttribute('data-status');
+    if (st === 'queued' || st === 'running') hasActive = true;
   });
   if (hasActive) { setTimeout(function () { location.reload(); }, 10000); }
 

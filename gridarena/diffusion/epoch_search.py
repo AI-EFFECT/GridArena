@@ -23,11 +23,28 @@ from typing import Dict, List
 
 import numpy as np
 
-from gridarena.diffusion.job_common import load_snapshots_and_config, update_run_config
+from gridarena.diffusion.job_common import (
+    load_snapshots_and_config,
+    mark_cancelled,
+    resolve_normalisation,
+    update_run_config,
+)
+from gridarena.run_cancellation import CancelCheck, TrainingCancelled, is_cancel_requested, raise_if_cancelled
 
 logger = logging.getLogger(__name__)
 
 _METRIC_NAMES = ["temporal_frobenius", "spatial_frobenius", "acf_mae", "mean_mae", "std_mae"]
+
+
+def split_selection_test(p_val: np.ndarray):
+    """Split the held-out days chronologically: the first half picks the epoch,
+    the second half scores the winner. Scoring on the days used to pick it
+    would report an optimistic number. With a single held-out day both halves
+    are that day (reported as ``test_is_selection_split``)."""
+    if len(p_val) < 2:
+        return p_val, p_val
+    mid = len(p_val) // 2
+    return p_val[:mid], p_val[mid:]
 
 
 def _composite_scores(history: List[dict]) -> None:
@@ -60,10 +77,11 @@ def _write_sweep_figure(history: List[dict], best_epoch: int, path: Path) -> Non
     path.write_bytes(buf.getvalue())
 
 
-def _train_with_checkpoints(config, p_train, p_val, checkpoint_epochs, sweep_inference_steps):
+def _train_with_checkpoints(config, p_train, p_val, checkpoint_epochs, sweep_inference_steps,
+                            should_stop=None, run_dir="."):
     """Train up to config.num_epochs, scoring against p_val at each checkpoint
     epoch. Returns (history, saved_states) where saved_states maps epoch ->
-    cpu state dict clone."""
+    cpu state dict clone. ``should_stop`` is polled once per batch."""
     import torch
     import torch.nn.functional as F
     from accelerate import Accelerator
@@ -75,13 +93,14 @@ def _train_with_checkpoints(config, p_train, p_val, checkpoint_epochs, sweep_inf
         compute_metrics,
         generate_samples,
     )
+    from gridarena.run_cancellation import TrainingCancelled
 
     model, noise_scheduler, optimizer, dataloader, lr_scheduler = build_training_pipeline(p_train, config)
 
     accelerator = Accelerator(
         mixed_precision=config.mixed_precision,
         gradient_accumulation_steps=config.gradient_accumulation_steps,
-        project_dir=os.path.join("logs"),
+        project_dir=os.path.join(run_dir, "logs"),
     )
     model, optimizer, dataloader, lr_scheduler = accelerator.prepare(
         model, optimizer, dataloader, lr_scheduler,
@@ -99,6 +118,11 @@ def _train_with_checkpoints(config, p_train, p_val, checkpoint_epochs, sweep_inf
         epoch_loss_sum, epoch_loss_count = 0.0, 0
 
         for batch in dataloader:
+            if should_stop is not None and should_stop():
+                progress.close()
+                accelerator.end_training()
+                raise TrainingCancelled("Training cancelled by user")
+
             clean_images = batch["images"]
             noise = torch.randn_like(clean_images)
             bs = clean_images.shape[0]
@@ -154,6 +178,9 @@ def run_epoch_search(run_dir: str) -> dict:
     with open(run_path / "run_config.json") as f:
         run_data = json.load(f)
 
+    if is_cancel_requested(run_dir):
+        return mark_cancelled(run_dir)
+
     update_run_config(run_dir, {"status": "running"})
 
     try:
@@ -176,14 +203,19 @@ def run_epoch_search(run_dir: str) -> dict:
 
         config.num_epochs = max_epochs
         p_train, p_val = split_power_dataset(power_snapshots, val_frac=val_frac, buffer_days=buffer_days)
+        # Scale on the training days only, so held-out days don't leak into the model.
+        config.power_subtract, config.power_rescale = resolve_normalisation(run_data, p_train)
+        p_select, p_test = split_selection_test(p_val)
 
         checkpoint_epochs = sorted(
             set(range(checkpoint_interval, max_epochs + 1, checkpoint_interval)) | {max_epochs}
         )
 
         history, saved_states = _train_with_checkpoints(
-            config, p_train, p_val, checkpoint_epochs, sweep_inference_steps,
+            config, p_train, p_select, checkpoint_epochs, sweep_inference_steps,
+            should_stop=CancelCheck(run_dir), run_dir=run_dir,
         )
+        raise_if_cancelled(run_dir)
 
         if not history:
             raise RuntimeError("Epoch sweep produced no checkpoints — increase max_epochs.")
@@ -199,8 +231,8 @@ def run_epoch_search(run_dir: str) -> dict:
         best_model.load_state_dict(saved_states[best_epoch])
         best_model.eval()
 
-        p_gen_final = generate_samples(best_model, config, batch_size=max(8, len(p_val)), device=device).astype("float32")
-        final_metrics = compute_metrics(p_val.astype("float32"), p_gen_final)
+        p_gen_final = generate_samples(best_model, config, batch_size=max(8, len(p_test)), device=device).astype("float32")
+        final_metrics = compute_metrics(p_test.astype("float32"), p_gen_final)
 
         model_dir = run_path / "model"
         model_dir.mkdir(parents=True, exist_ok=True)
@@ -219,11 +251,15 @@ def run_epoch_search(run_dir: str) -> dict:
             "buffer_days": buffer_days,
             "num_train_days": int(len(p_train)),
             "num_val_days": int(len(p_val)),
+            "num_selection_days": int(len(p_select)),
+            "num_test_days": int(len(p_test)),
+            "test_is_selection_split": len(p_val) < 2,
             "methodology": (
                 "Each checkpoint's composite_score is the unweighted mean of its five "
                 "validation metrics, each normalised by that metric's max across the sweep "
-                "(lower is better). Sweep checkpoints use sweep_inference_steps for speed; "
-                "the winner is re-scored at full inference steps and saved as the run's model."
+                "(lower is better), scored on the first half of the held-out days. Sweep "
+                "checkpoints use sweep_inference_steps for speed; the winner is re-scored at "
+                "full inference steps on the second half and saved as the run's model."
             ),
             "history": history,
             "best_epoch": best_epoch,
@@ -249,6 +285,8 @@ def run_epoch_search(run_dir: str) -> dict:
         })
         return {"status": "completed", "metrics": metrics}
 
+    except TrainingCancelled:
+        return mark_cancelled(run_dir)
     except Exception as e:
         logger.error("Epoch search failed: %s", e, exc_info=True)
         update_run_config(run_dir, {

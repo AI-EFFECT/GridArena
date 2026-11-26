@@ -32,9 +32,28 @@ from typing import Tuple
 
 import numpy as np
 
-from gridarena.diffusion.job_common import load_snapshots_and_config, update_run_config
+from gridarena.diffusion.job_common import (
+    load_snapshots_and_config,
+    mark_cancelled,
+    resolve_normalisation,
+    update_run_config,
+)
+from gridarena.run_cancellation import CancelCheck, TrainingCancelled, is_cancel_requested, raise_if_cancelled
 
 logger = logging.getLogger(__name__)
+
+
+# An untrained DDPM predicts noise with MSE ~1.0. A model still above this loss
+# has learned too little for the audit to say anything: it would "pass" simply
+# because it memorised nothing, not because it protects its training data.
+UNDERTRAINED_LOSS = 0.9
+
+
+def audit_verdict(mi_passed: bool, canary_passed: bool, final_loss) -> str:
+    """"passed" / "failed", or "inconclusive" when the audited model barely trained."""
+    if final_loss is None or not np.isfinite(final_loss) or final_loss >= UNDERTRAINED_LOSS:
+        return "inconclusive"
+    return "passed" if (mi_passed and canary_passed) else "failed"
 
 
 # ── Membership inference: loss-threshold attack ─────────────────────────────
@@ -181,11 +200,15 @@ def run_privacy_check(run_dir: str) -> dict:
     with open(run_path / "run_config.json") as f:
         run_data = json.load(f)
 
+    if is_cancel_requested(run_dir):
+        return mark_cancelled(run_dir)
+
     update_run_config(run_dir, {"status": "running"})
 
     try:
         from gridarena.diffusion.model_core import (
             build_noise_scheduler,
+            compute_metrics,
             generate_samples,
             split_power_dataset,
             train_diffusion_model,
@@ -201,14 +224,18 @@ def run_privacy_check(run_dir: str) -> dict:
         canary_inference_steps = run_data.get("canary_inference_steps", 250)
 
         p_train, p_val = split_power_dataset(power_snapshots, val_frac=val_frac, buffer_days=buffer_days)
+        # Scale on the training days only, so held-out days don't leak into the model.
+        config.power_subtract, config.power_rescale = resolve_normalisation(run_data, p_train)
 
         canaries = _make_canaries(p_train, num_canaries)
         p_train_with_canaries = np.concatenate([p_train, canaries], axis=0)
 
         # Diagnostic model: never saved (save_artifacts=False).
-        trained_model, _ = train_diffusion_model(
+        trained_model, train_metrics = train_diffusion_model(
             p_dataset=p_train_with_canaries, config=config, output_dir=run_dir, save_artifacts=False,
+            should_stop=CancelCheck(run_dir),
         )
+        raise_if_cancelled(run_dir)
 
         # --- Membership inference ---
         noise_scheduler = build_noise_scheduler()
@@ -234,6 +261,10 @@ def run_privacy_check(run_dir: str) -> dict:
         threshold_p5 = float(np.percentile(natural_nn, 5))
         canaries_below_p5 = (canary_nn < threshold_p5).tolist()
         canary_passed = not any(canaries_below_p5)
+
+        final_loss = train_metrics.get("final_loss")
+        verdict = audit_verdict(mi_passed, canary_passed, final_loss)
+        utility = compute_metrics(p_val.astype("float32"), p_gen)
 
         _write_mi_figure(member_losses, nonmember_losses, auc, (ci_low, ci_high),
                          run_path / "mi_loss_distributions.png")
@@ -282,7 +313,22 @@ def run_privacy_check(run_dir: str) -> dict:
                 "canaries_below_p5": canaries_below_p5,
                 "passed": bool(canary_passed),
             },
-            "overall_passed": bool(mi_passed and canary_passed),
+            "training": {
+                "final_loss": final_loss,
+                "undertrained_loss_threshold": UNDERTRAINED_LOSS,
+                "lr_warmup_steps_effective": train_metrics.get("lr_warmup_steps_effective"),
+            },
+            "utility": {
+                "method": "Distance of generated samples from the held-out days (lower is better).",
+                **utility,
+            },
+            "verdict": verdict,
+            "verdict_note": (
+                "inconclusive: the audited model's final loss is too high for the attacks to be "
+                "meaningful — train longer before trusting a pass."
+                if verdict == "inconclusive" else None
+            ),
+            "overall_passed": verdict == "passed",
             "figures": ["mi_loss_distributions.png", "canary_nn_distances.png"],
         }
 
@@ -293,6 +339,7 @@ def run_privacy_check(run_dir: str) -> dict:
         metrics = {
             "architecture": config.architecture,
             "overall_passed": report["overall_passed"],
+            "verdict": verdict,
             "mi_auc": auc,
             "mi_auc_ci_95": [ci_low, ci_high],
             "canaries_memorised": int(sum(canaries_below_p5)),
@@ -307,6 +354,8 @@ def run_privacy_check(run_dir: str) -> dict:
         })
         return {"status": "completed", "metrics": metrics}
 
+    except TrainingCancelled:
+        return mark_cancelled(run_dir)
     except Exception as e:
         logger.error("Privacy check failed: %s", e, exc_info=True)
         update_run_config(run_dir, {

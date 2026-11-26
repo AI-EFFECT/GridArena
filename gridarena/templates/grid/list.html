@@ -109,9 +109,9 @@
 
   <div id="previewSection" style="display:none; margin-top:16px;">
     <h4>Validation Preview</h4>
-    <div id="previewErrors" style="color:#dc2626;"></div>
+    <div id="previewErrors" style="color:var(--color-danger);"></div>
     <table class="data-table" id="previewTable" style="max-width:600px;"></table>
-    <div id="previewGraph" style="width:100%; height:420px; margin-top:14px;"></div>
+    <div id="previewGraph" class="chart-frame" style="width:100%; height:420px; margin-top:14px;"></div>
   </div>
 </div>
 
@@ -160,7 +160,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="5" style="text-align:center; padding:24px; color:#6b7280;">No LV grids uploaded yet. Upload a JSON file above to get started.</td></tr>
+      <tr><td colspan="5" style="text-align:center; padding:24px; color:var(--color-text-muted);">No LV grids uploaded yet. Upload a JSON file above to get started.</td></tr>
       {% endfor %}
     </tbody>
   </table>

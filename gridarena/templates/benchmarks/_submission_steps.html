@@ -1,0 +1,65 @@
+{# Steps 2-4 shared by the benchmark pages: submit a script, follow its results,
+   browse past submissions. Driven by static/js/benchmark-submissions.js.
+   Expects `run_unit` (what the script is called once per, e.g. "hidden test grid"). #}
+
+<!-- Step 2: Submit -->
+<div class="bench-step">
+  <div class="bench-step__header">
+    <div class="bench-step__number">2</div>
+    <h4 class="bench-step__title">Submit Your Script</h4>
+  </div>
+  <p class="bench-step__desc">Upload your filled-in template (.py), or a .zip with it as <code>submission.py</code> next to model weights and helper modules. It is run once per {{ run_unit }} with the settings above.</p>
+
+  <input id="scriptFile" type="file" accept=".py,.zip" hidden>
+  <div id="scriptDrop" class="drop" role="button" tabindex="0">
+    <div class="icon">&#11014;</div>
+    <div class="drop__title">Drop your script here or click to choose<br><span class="muted">Accepted: .py, .zip</span></div>
+    <div class="drop__label muted" id="scriptFileLabel">No file selected</div>
+  </div>
+
+  <div class="field" style="margin-top:12px;">
+    <button class="btn btn-primary" type="button" id="btnSubmit" disabled>Submit Script</button>
+  </div>
+  <p class="muted" id="uploadMsg"></p>
+</div>
+
+<!-- Step 3: Results -->
+<div class="bench-step">
+  <div class="bench-step__header">
+    <div class="bench-step__number">3</div>
+    <h4 class="bench-step__title">Results</h4>
+  </div>
+  <p class="bench-step__desc">Your script's output is scored against the hidden ground truth. The status updates while it runs.</p>
+
+  <p class="muted" id="runMsg">No submission selected.</p>
+
+  <div class="bench-result" id="scoreResult">
+    <h4>Score</h4>
+    <table id="scoreTable"></table>
+    <table id="gridTable" style="margin-top:12px;"></table>
+  </div>
+
+  <div class="bench-result bench-result--error" id="runError">
+    <h4>Submission Failed</h4>
+    <p class="muted" id="runErrorMsg"></p>
+  </div>
+
+  <details class="bench-hint" id="logBox" style="display:none;">
+    <summary>Submission Log</summary>
+    <div class="bench-hint__body"><pre id="logText"></pre></div>
+  </details>
+</div>
+
+<!-- Step 4: Previous submissions -->
+<div class="bench-step">
+  <div class="bench-step__header">
+    <div class="bench-step__number">4</div>
+    <h4 class="bench-step__title">Submissions</h4>
+  </div>
+  <p class="bench-step__desc">All submissions, newest first. Click a row to see its results.</p>
+  <div class="field">
+    <button class="btn-secondary" type="button" id="btnRefresh">Refresh</button>
+    <label style="min-width:auto;"><input type="checkbox" id="onlyMine"> Only this submission name</label>
+  </div>
+  <table id="historyTable"></table>
+</div>

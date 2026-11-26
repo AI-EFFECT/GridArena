@@ -1,292 +1,252 @@
-import io
-import json
 from datetime import datetime, timedelta
-from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
-from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-import gridarena.database as db
 from gridarena.app import app
-from gridarena.routers import powerflow as pf
+from gridarena.powerflow import lv_runs
+from gridarena.powerflow import three_phase as tp
+from gridarena.powerflow.powerflow_algorithm import full_pf
 
-GRID_ID = "grid33nodes"
-PHASE = "R"
-TIMESTAMP = "2025-01-01T00:00:00"
-
-
-# ---------------------------------------------------------------------
-# Unit test for single_timestamp_power_flow()
-# ---------------------------------------------------------------------
-@patch("gridarena.routers.powerflow.db.insert_pf_data")
-@patch("gridarena.routers.powerflow.full_pf")
-@patch("gridarena.routers.powerflow.ms.get_pt_voltage")
-@patch("gridarena.routers.powerflow.gd.get_grid_admitances")
-@patch("gridarena.routers.powerflow.gd.get_grid_connections")
-@patch("gridarena.routers.powerflow.ms.get_measurement_from_timestamp")
-@patch("gridarena.routers.powerflow.gd.get_nodes_from_grid")
-def test_single_timestamp_power_flow_calls_all_dependencies(
-    mock_get_nodes,
-    mock_get_measurements,
-    mock_get_connections,
-    mock_get_admittances,
-    mock_get_pt_voltage,
-    mock_full_pf,
-    mock_insert,
-):
-    """Should call every dependency in the correct sequence."""
-    mock_cursor = MagicMock()
-
-    mock_get_nodes.return_value = {"PT": 0, "NODE1": 1}
-    mock_get_measurements.return_value = [1 + 2j, 3 + 4j]
-    mock_get_connections.return_value = ([("PT", "NODE1")], [{"len": 1}])
-    mock_get_admittances.return_value = [0.1 + 0.01j]
-    mock_get_pt_voltage.return_value = 230 + 0j
-    mock_full_pf.return_value = np.array([230 + 0j, 228.5 - 1.2j])
-
-    pf.single_timestamp_power_flow(mock_cursor, GRID_ID, TIMESTAMP, PHASE)
-
-    mock_get_nodes.assert_called_once_with(GRID_ID, mock_cursor)
-    mock_get_measurements.assert_called_once()
-    mock_get_connections.assert_called_once()
-    mock_get_admittances.assert_called_once()
-    mock_get_pt_voltage.assert_called_once()
-    mock_full_pf.assert_called_once()
-    mock_insert.assert_called_once()
-
-
-# ---------------------------------------------------------------------
-# Unit tests for run_power_flow()
-# ---------------------------------------------------------------------
-@pytest.mark.asyncio
-@patch("gridarena.routers.powerflow.db.get_db_connection")
-@patch("gridarena.routers.powerflow.db.create_pf_database")
-@patch("gridarena.routers.powerflow.single_timestamp_power_flow")
-async def test_run_power_flow_runs_for_each_timestamp(
-    mock_single_pf, mock_create_pf, mock_get_db
-):
-    """Should iterate over all timestamps and call single_timestamp_power_flow for each."""
-
-    conn = MagicMock()
-    cursor = MagicMock()
-    mock_get_db.return_value = (conn, cursor)
-
-    # Simulate DB returning two timestamps
-    cursor.fetchall.return_value = [("2025-01-01T00:00:00",), ("2025-01-01T01:00:00",)]
-
-    result = await pf.run_power_flow(GRID_ID, PHASE)
-
-    assert result["message"].startswith("Power flow has been run")
-    assert mock_single_pf.call_count == 2
-    conn.close.assert_called_once()
-
-
-@pytest.mark.asyncio
-@patch("gridarena.routers.powerflow.db.get_db_connection")
-async def test_run_power_flow_no_timestamps_raises(mock_get_db):
-    """Should raise HTTP 404 when no timestamps found."""
-    conn = MagicMock()
-    cursor = MagicMock()
-    cursor.fetchall.return_value = []
-    mock_get_db.return_value = (conn, cursor)
-
-    with pytest.raises(HTTPException) as exc:
-        await pf.run_power_flow(GRID_ID, PHASE)
-
-    assert exc.value.status_code == 404
-    assert "no measurement timestamps" in exc.value.detail.lower()
-    conn.rollback.assert_called_once()
-    conn.close.assert_called_once()
-
-
-# ---------------------------------------------------------------------
-# Unit tests for get_power_flow_results()
-# ---------------------------------------------------------------------
-@pytest.mark.asyncio
-@patch("gridarena.routers.powerflow.db.get_db_connection")
-async def test_get_power_flow_results_returns_expected_data(mock_get_db):
-    """Should format results correctly from DB rows."""
-    conn = MagicMock()
-    cursor = MagicMock()
-    mock_get_db.return_value = (conn, cursor)
-
-    cursor.fetchall.return_value = [
-        ("PT", "2025-01-01T00:00:00", 230.0, 0.0),
-        ("NODE1", "2025-01-01T00:00:00", 228.5, -1.2),
-    ]
-
-    result = await pf.get_power_flow_results(GRID_ID, PHASE)
-    assert result["grid_id"] == GRID_ID
-    assert len(result["results"]) == 2
-    assert result["results"][0]["voltage"]["real"] == 230.0
-    conn.close.assert_called_once()
-
-
-@pytest.mark.asyncio
-@patch("gridarena.routers.powerflow.db.get_db_connection")
-async def test_get_power_flow_results_raises_404_if_empty(mock_get_db):
-    """Should raise HTTP 404 when no results are available."""
-    conn = MagicMock()
-    cursor = MagicMock()
-    cursor.fetchall.return_value = []
-    mock_get_db.return_value = (conn, cursor)
-
-    with pytest.raises(HTTPException) as exc:
-        await pf.get_power_flow_results(GRID_ID, PHASE)
-
-    assert exc.value.status_code == 404
-    assert "no power flow results" in exc.value.detail.lower()
-    conn.close.assert_called_once()
-
-
-@pytest.mark.asyncio
-@patch("gridarena.routers.powerflow.db.get_db_connection")
-async def test_get_power_flow_results_db_error(mock_get_db):
-    """Should raise HTTP 500 if DB layer throws an error."""
-    conn = MagicMock()
-    cursor = MagicMock()
-    mock_get_db.return_value = (conn, cursor)
-
-    cursor.execute.side_effect = Exception("SQL error")
-
-    with pytest.raises(HTTPException) as exc:
-        await pf.get_power_flow_results(GRID_ID, PHASE)
-
-    assert exc.value.status_code == 500
-    assert "database error" in exc.value.detail.lower()
-    conn.close.assert_called_once()
-
-
-# ---------------------------------------------------------------------
-# Integration-style tests (PostgreSQL-backed via real API endpoints)
-# ---------------------------------------------------------------------
+from tests._benchmark_helpers import delete_grids, register_grid
 
 client = TestClient(app)
-NOW = datetime.utcnow()
+
+# PT - 1 - 2 - 3, with a branch 1 - 4; different impedance per phase.
+CONNECTIONS = [(0, 1), (1, 2), (2, 3), (1, 4)]
+Z = np.array([[0.03 + 0.008j, 0.04 + 0.010j, 0.05 + 0.012j]] * 4)
+V_ROOT = np.array([[230 * np.exp(1j * np.radians(a)) for a in tp.NOMINAL_ANGLES_DEG]])
 
 
-def _setup_powerflow_grid(grid_id: str):
-    """Create a minimal grid + historical data via the real API."""
-    # Minimal grid definition
-    grid_payload = {
-        "grid_id": grid_id,
-        "nodes": [
-            {"node_id": "PT", "coord_lat": 38.65, "coord_lon": -7.98, "coord_error": 1},
-            {"node_id": "NODE0001", "coord_lat": 38.651, "coord_lon": -7.981, "coord_error": 1},
-        ],
-        "connections": [
-            {
-                "connection_id": "LineUID000001",
-                "from_node_id": "PT",
-                "to_node_id": "NODE0001",
-                "length": 1000,
-                "cable_id": "TypeLine00001",
-            }
-        ],
-        "cables": [
-            {
-                "cable_id": "TypeLine00001",
-                "r_imp_real": 0.01,
-                "r_imp_imag": 0.001,
-                "s_imp_real": 0.01,
-                "s_imp_imag": 0.001,
-                "t_imp_real": 0.01,
-                "t_imp_imag": 0.001,
-                "r_nom_curr": 10000,
-                "s_nom_curr": 10000,
-                "t_nom_curr": 10000,
-            }
-        ],
-    }
-
-    # Minimal historical data with phase R for PT and NODE0001
-    hist_payload = {
-        "grid_id": grid_id,
-        "historical": [
-            {
-                "node_id": "PT",
-                "measurements": [
-                    {
-                        "datetime": (NOW - timedelta(hours=1)).isoformat(),
-                        "phase": "R",
-                        "power_active": 0.0,
-                        "power_reactive": 0.0,
-                        "voltage_magnitude": 230.0,
-                        "voltage_angle": 0.0,
-                    }
-                ],
-            },
-            {
-                "node_id": "NODE0001",
-                "measurements": [
-                    {
-                        "datetime": (NOW - timedelta(hours=1)).isoformat(),
-                        "phase": "R",
-                        "power_active": 5.0,
-                        "power_reactive": 2.0,
-                        "voltage_magnitude": 0.0,
-                        "voltage_angle": 0.0,
-                    }
-                ],
-            },
-        ],
-    }
-
-    # Register grid
-    grid_bytes = io.BytesIO(json.dumps(grid_payload).encode("utf-8"))
-    resp_grid = client.post(
-        "/grid/",
-        files={"file": ("grid.json", grid_bytes, "application/json")},
-    )
-    assert resp_grid.status_code == 200, resp_grid.text
-
-    # Upload historical data
-    hist_bytes = io.BytesIO(json.dumps(hist_payload).encode("utf-8"))
-    resp_hist = client.post(
-        "/measurements/",
-        files={"file": ("hist.json", hist_bytes, "application/json")},
-    )
-    assert resp_hist.status_code == 200, resp_hist.text
+def _unbalanced_load():
+    s = np.zeros((1, 5, 3), dtype=complex)
+    s[0, 1, 0] = 1000          # R
+    s[0, 2, 0] = 3000 + 300j   # R
+    s[0, 3, 1] = 2500          # S
+    s[0, 4, 2] = -2000         # T: PV generation
+    return s
 
 
-def test_powerflow_run_endpoints():
-    """
-    Integration smoke test: ensures /powerflow/{grid_id}/run works with a real DB
-    and data created via the API.
-    """
-    grid_id = "pf_grid_run_1"
-    phase = "R"
-
-    _setup_powerflow_grid(grid_id)
-
-    run_response = client.post(f"/powerflow/{grid_id}/run?phase={phase}")
-    assert run_response.status_code == 200, run_response.text
-    assert "successfully" in run_response.json()["message"].lower()
+def _residual(grid, s, result):
+    """Largest violation of U = V_root - D_p J_p - D_n sum(J) at the solution."""
+    u = result.v_phase[:, grid.nodes, :]
+    j = np.where(s[:, grid.nodes, :] == 0, 0, np.conj(s[:, grid.nodes, :] / u))
+    drop = np.stack([j[:, :, p] @ grid.d_phase[p].T for p in range(3)], axis=-1)
+    v_n = j.sum(axis=-1) @ grid.d_neutral.T
+    return np.abs(V_ROOT[:, None, :] - drop - v_n[:, :, None] - u).max()
 
 
-def test_powerflow_results_endpoints():
-    """
-    Integration smoke test: ensures /powerflowdata/{grid_id}/results returns
-    stored PF results after /run has been executed.
-    """
-    grid_id = "pf_grid_results_1"
-    phase = "R"
+# ----------------------------------------------------------------------------------------
+# Three-phase solver
+# ----------------------------------------------------------------------------------------
+def test_ideal_neutral_matches_single_phase_solver_per_phase():
+    s = _unbalanced_load()
+    result = tp.solve(tp.build_radial_grid(5, CONNECTIONS, Z, neutral_ratio=0.0), s, V_ROOT)
+    assert result.converged.all()
+    for p in range(3):
+        expected = full_pf(s[0, :, p], np.array(CONNECTIONS), 1 / Z[:, p], V_ROOT[0, p])
+        np.testing.assert_allclose(result.v_phase[0, :, p], expected, atol=1e-6)
+    np.testing.assert_allclose(result.v_neutral, 0, atol=1e-12)
 
-    _setup_powerflow_grid(grid_id)
 
-    # Run power flow first
-    run_response = client.post(f"/powerflow/{grid_id}/run?phase={phase}")
-    assert run_response.status_code == 200, run_response.text
+def test_unbalanced_load_shifts_the_neutral_and_the_other_phases():
+    s = _unbalanced_load()
+    grid = tp.build_radial_grid(5, CONNECTIONS, Z, neutral_ratio=1.0)
+    ideal = tp.solve(tp.build_radial_grid(5, CONNECTIONS, Z, neutral_ratio=0.0), s, V_ROOT)
+    result = tp.solve(grid, s, V_ROOT)
 
-    # Fetch results
-    results_response = client.get(f"/powerflow/data/{grid_id}/results?phase={phase}")
-    assert results_response.status_code == 200, results_response.text
-    data = results_response.json()
+    assert result.converged.all()
+    assert _residual(grid, s, result) < 1e-5
+    assert abs(result.v_neutral[0, 0]) == 0                       # grounded at the substation
+    assert abs(result.v_neutral[0, 3]) > 1.0                      # floats away from it
+    # Node 3 only draws on S, yet its R and T voltages move once the neutral is modelled.
+    assert abs(abs(result.v_phase[0, 3, 0]) - abs(ideal.v_phase[0, 3, 0])) > 0.5
+    assert abs(abs(result.v_phase[0, 3, 2]) - abs(ideal.v_phase[0, 3, 2])) > 0.5
 
-    assert data["grid_id"] == grid_id
-    assert data["phase"] == phase
-    assert "results" in data
-    assert isinstance(data["results"], list)
-    assert len(data["results"]) > 0
+
+def test_balanced_load_has_no_neutral_current():
+    s = np.zeros((1, 5, 3), dtype=complex)
+    s[0, 2, :] = 2000 + 200j
+    z = np.repeat(Z[:, :1], 3, axis=1)
+    result = tp.solve(tp.build_radial_grid(5, CONNECTIONS, z, neutral_ratio=1.0), s, V_ROOT)
+    np.testing.assert_allclose(result.v_neutral, 0, atol=1e-9)
+    mags = np.abs(result.v_phase[0])
+    np.testing.assert_allclose(mags, mags[:, :1].repeat(3, axis=1), atol=1e-9)
+
+
+def test_balanced_inputs_spread_power_and_symmetrise_the_reference():
+    s = _unbalanced_load()
+    v_root = np.array([[231 * np.exp(0.01j), 229 * np.exp(-2.1j), 230 * np.exp(2.1j)]])
+    s_bal, v_bal = tp.balanced_inputs(s, v_root)
+    np.testing.assert_allclose(s_bal[0, 2], [(3000 + 300j) / 3] * 3)
+    np.testing.assert_allclose(np.abs(v_bal[0]), [230, 230, 230])
+    np.testing.assert_allclose(np.degrees(np.angle(v_bal[0] / v_bal[0, 0])), [0, -120, 120], atol=1e-9)
+
+
+def test_connection_order_and_direction_do_not_matter():
+    s = _unbalanced_load()
+    reference = tp.solve(tp.build_radial_grid(5, CONNECTIONS, Z, 1.0), s, V_ROOT)
+    shuffled = [(4, 1), (3, 2), (1, 0), (2, 1)]
+    result = tp.solve(tp.build_radial_grid(5, shuffled, Z[[3, 2, 0, 1]], 1.0), s, V_ROOT)
+    np.testing.assert_allclose(result.v_phase, reference.v_phase, atol=1e-9)
+
+
+def test_parallel_cables_are_combined():
+    s = _unbalanced_load()
+    single = tp.solve(tp.build_radial_grid(5, CONNECTIONS, Z / 2, 1.0), s, V_ROOT)
+    doubled = tp.solve(tp.build_radial_grid(5, CONNECTIONS + CONNECTIONS, np.vstack([Z, Z]), 1.0), s, V_ROOT)
+    np.testing.assert_allclose(doubled.v_phase, single.v_phase, atol=1e-9)
+
+
+def test_loops_are_rejected_and_unconnected_nodes_left_out():
+    with pytest.raises(tp.NotRadialError, match="loop"):
+        tp.build_radial_grid(5, CONNECTIONS + [(3, 4)], np.vstack([Z, Z[:1]]))
+
+    grid = tp.build_radial_grid(6, CONNECTIONS, Z)          # node 5 has no connection
+    assert grid.unreachable == [5]
+    s = np.zeros((1, 6, 3), dtype=complex)
+    s[0, 5, 0] = 1000
+    result = tp.solve(grid, s, V_ROOT)
+    assert np.isnan(result.v_phase[0, 5]).all()
+    assert not np.isnan(result.v_phase[0, :5]).any()
+
+
+def test_many_timestamps_at_once_match_one_at_a_time():
+    rng = np.random.default_rng(0)
+    s = (rng.uniform(-3000, 5000, (6, 5, 3)) + 1j * rng.uniform(0, 500, (6, 5, 3)))
+    v_root = V_ROOT.repeat(6, axis=0) * rng.uniform(0.97, 1.03, (6, 1))
+    grid = tp.build_radial_grid(5, CONNECTIONS, Z, 1.0)
+    batch = tp.solve(grid, s, v_root)
+    for t in range(6):
+        one = tp.solve(grid, s[t:t + 1], v_root[t:t + 1])
+        np.testing.assert_allclose(batch.v_phase[t], one.v_phase[0], atol=1e-6)
+
+
+def test_reference_voltages_fill_unmeasured_phases():
+    ref = lv_runs._root_voltages({"R": (231.0, 1.0), "S": (229.0, -119.0)})
+    assert np.isclose(abs(ref[2]), 230.0)
+    assert np.isclose(np.degrees(np.angle(ref[2])), 121.0)
+    assert lv_runs._root_voltages({}) is None
+
+
+def test_error_summary_skips_reference_and_unconverged():
+    def row(node, comp, meas, converged=True):
+        return {"node_id": node, "phase": "R", "converged": converged,
+                "computed": {"voltage_magnitude": comp, "voltage_angle": 1.0},
+                "measured": None if meas is None else {"voltage_magnitude": meas, "voltage_angle": 0.0}}
+
+    summary = lv_runs.error_summary([
+        row("PT", 230.0, 230.0), row("N1", 229.0, 228.0), row("N1", 227.0, 228.0),
+        row("N1", 200.0, 228.0, converged=False), row("N2", 226.0, None),
+    ])
+    assert summary == [{
+        "node_id": "N1", "phase": "R", "points": 2, "mae_voltage_magnitude": 1.0,
+        "max_abs_voltage_magnitude": 1.0, "bias_voltage_magnitude": 0.0, "mae_voltage_angle": 1.0,
+    }]
+
+
+# ----------------------------------------------------------------------------------------
+# Integration (real FastAPI + PostgreSQL)
+# ----------------------------------------------------------------------------------------
+GRID_ID = "pf_grid_3ph_pg1"
+LOOP_GRID_ID = "pf_grid_loop_pg1"
+NO_PT_GRID_ID = "pf_grid_nopt_pg1"
+T0 = datetime(2025, 7, 1, 12)
+
+
+@pytest.fixture(scope="module")
+def pf_grid():
+    """PT - N1 - N2 (500 m each), PT measured on all phases, N1 on R, N2 on S, 3 timestamps."""
+    ids = [GRID_ID, LOOP_GRID_ID, NO_PT_GRID_ID]
+    delete_grids(ids)
+
+    def rec(h, phase, p, v, ang):
+        return {"datetime": (T0 + timedelta(hours=h)).isoformat(), "phase": phase, "power_active": p,
+                "power_reactive": 0.1 * p, "voltage_magnitude": v, "voltage_angle": ang}
+
+    pt = [rec(h, ph, 0.0, 231.0, ang) for h in range(3) for ph, ang in zip("RST", tp.NOMINAL_ANGLES_DEG)]
+    register_grid(client, GRID_ID, edges=[("PT", "N1"), ("N1", "N2")], usage=set(), measurements={
+        "PT": pt,
+        "N1": [rec(h, "R", 4000.0 + 500 * h, 228.5, -0.4) for h in range(3)],
+        "N2": [rec(h, "S", 6000.0, 225.0, -121.0) for h in range(3)],
+    })
+    register_grid(client, LOOP_GRID_ID, edges=[("PT", "N1"), ("N1", "N2"), ("N2", "PT")], usage=set(),
+                  measurements={"PT": pt})
+    register_grid(client, NO_PT_GRID_ID, edges=[("A", "B")], usage=set(),
+                  measurements={"A": [rec(0, "R", 0.0, 230.0, 0.0)]})
+    yield GRID_ID
+    delete_grids(ids)
+
+
+def test_unbalanced_run_and_results(pf_grid):
+    resp = client.post(f"/powerflow/{pf_grid}/run", params={"mode": "unbalanced"})
+    assert resp.status_code == 200, resp.text
+    summary = resp.json()
+    assert (summary["timestamps"], summary["not_converged"], summary["skipped_timestamps"]) == (3, 0, 0)
+    assert summary["neutral_impedance_ratio"] == 1.0
+
+    data = client.get(f"/powerflow/data/{pf_grid}/results").json()
+    assert data["run"]["mode"] == "unbalanced" and data["reference_node"] == "PT"
+    by_key = {(r["node_id"], r["phase"], r["timestamp"]): r for r in data["results"]}
+    assert len(by_key) == 3 * 3 * 4                      # 3 nodes x (R, S, T, N) x 3 timestamps
+
+    stamp = str(T0)
+    n2_s = by_key[("N2", "S", stamp)]
+    assert n2_s["measured"] == {"voltage_magnitude": 225.0, "voltage_angle": -121.0}
+    assert n2_s["computed"]["voltage_magnitude"] < 231.0 and n2_s["converged"]
+    assert by_key[("N2", "R", stamp)]["measured"] is None    # no meter on R at N2
+    assert by_key[("N2", "N", stamp)]["measured"] is None
+    assert by_key[("N2", "N", stamp)]["computed"]["voltage_magnitude"] > 0.1
+    pt_r = by_key[("PT", "R", stamp)]
+    assert abs(pt_r["computed"]["voltage_magnitude"] - 231.0) < 1e-9
+
+    errors = {(e["node_id"], e["phase"]): e for e in data["errors"]}
+    assert set(errors) == {("N1", "R"), ("N2", "S")}
+    assert errors[("N2", "S")]["points"] == 3
+
+    only_s = client.get(f"/powerflow/data/{pf_grid}/results", params={"phase": "S"}).json()
+    assert {r["phase"] for r in only_s["results"]} == {"S"}
+
+
+def test_balanced_run_replaces_results(pf_grid):
+    resp = client.post(f"/powerflow/{pf_grid}/run", params={"mode": "balanced", "start_time": str(T0)})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["neutral_impedance_ratio"] is None
+
+    data = client.get(f"/powerflow/data/{pf_grid}/results").json()
+    assert data["run"]["mode"] == "balanced"
+    assert {r["phase"] for r in data["results"]} == {"R", "S", "T"}      # no neutral rows
+    assert len({r["timestamp"] for r in data["results"]}) == 3
+    n2 = [r["computed"]["voltage_magnitude"] for r in data["results"]
+          if r["node_id"] == "N2" and r["timestamp"] == str(T0)]
+    np.testing.assert_allclose(n2, n2[0], atol=1e-9)                    # same on every phase
+
+
+@pytest.mark.parametrize("grid_id, params, status, detail", [
+    (LOOP_GRID_ID, {}, 422, "loop"),
+    (NO_PT_GRID_ID, {}, 422, "PT"),
+    (GRID_ID, {"start_time": "2030-01-01T00:00:00"}, 404, "No measurements"),
+    (GRID_ID, {"mode": "three-phase"}, 422, "mode"),
+    (GRID_ID, {"neutral_impedance_ratio": -1}, 422, "neutral_impedance_ratio"),
+])
+def test_run_errors(pf_grid, grid_id, params, status, detail):
+    resp = client.post(f"/powerflow/{grid_id}/run", params=params)
+    assert resp.status_code == status, resp.text
+    assert detail in resp.text
+
+
+def test_results_404_without_a_run(pf_grid):
+    assert client.get(f"/powerflow/data/{LOOP_GRID_ID}/results").status_code == 404
+
+
+def test_ui_pages(pf_grid):
+    client.post(f"/powerflow/{pf_grid}/run", params={"mode": "unbalanced"})
+    page = client.get("/powerflow/ui")
+    assert page.status_code == 200 and 'id="mode"' in page.text
+
+    results = client.get(f"/powerflow/ui/{pf_grid}", params={"phase": "S"})
+    assert results.status_code == 200
+    assert "Computed vs Measured" in results.text and "Unbalanced (three-phase, four-wire)" in results.text
+    neutral = client.get(f"/powerflow/ui/{pf_grid}", params={"phase": "N"})
+    assert neutral.status_code == 200 and "neutral-to-ground" in neutral.text

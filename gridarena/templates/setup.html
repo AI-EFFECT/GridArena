@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block head %}
+<link rel="stylesheet" href="/static/css/grid-dashboard.css">
+<link rel="stylesheet" href="/static/css/settings.css">
+{% endblock %}
+
+{% block content %}
+<div class="panel">
+  <div class="grid-dash-header">
+    <div>
+      <h2>Welcome to GridArena</h2>
+      <p>No database is configured yet. Choose the PostgreSQL database GridArena should use — the connection is tested before it is saved, and the tables GridArena needs are created automatically.</p>
+    </div>
+  </div>
+</div>
+
+{% if error %}
+<div class="status-banner danger" style="margin-bottom:16px;">{{ error }}</div>
+{% endif %}
+
+<form class="panel cfg-form" method="post" action="/setup" autocomplete="off">
+  <h3>Database connection</h3>
+
+  <div class="cfg-mode" role="radiogroup" aria-label="How to enter the connection">
+    <label><input type="radio" name="mode" value="fields" {{ 'checked' if values.mode != 'dsn' }} onchange="setupMode(this.value)"> Server details</label>
+    <label><input type="radio" name="mode" value="dsn" {{ 'checked' if values.mode == 'dsn' }} onchange="setupMode(this.value)"> Connection string</label>
+  </div>
+
+  <div id="modeFields" {% if values.mode == 'dsn' %}hidden{% endif %}>
+    <div class="field"><label for="host">Host</label>
+      <input id="host" name="host" type="text" value="{{ values.host or ('host.docker.internal' if in_docker else 'localhost') }}"></div>
+    <div class="field"><label for="port">Port</label>
+      <input id="port" name="port" type="number" value="{{ values.port or '5432' }}" min="1" max="65535"></div>
+    <div class="field"><label for="dbname">Database</label>
+      <input id="dbname" name="dbname" type="text" value="{{ values.dbname or 'gridarena' }}"></div>
+    <div class="field"><label for="user">User</label>
+      <input id="user" name="user" type="text" value="{{ values.user or '' }}"></div>
+    <div class="field"><label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="new-password"></div>
+    <div class="field"><label for="sslmode">SSL</label>
+      <select id="sslmode" name="sslmode">
+        {% for opt, label in [('', 'Default (prefer)'), ('disable', 'disable'), ('require', 'require'), ('verify-full', 'verify-full')] %}
+        <option value="{{ opt }}" {{ 'selected' if values.sslmode == opt }}>{{ label }}</option>
+        {% endfor %}
+      </select></div>
+  </div>
+
+  <div id="modeDsn" {% if values.mode != 'dsn' %}hidden{% endif %}>
+    <div class="field" style="align-items:flex-start;"><label for="dsn">Connection string</label>
+      <textarea id="dsn" name="dsn" placeholder="postgresql://user:password@host:5432/gridarena">{{ values.dsn or '' }}</textarea></div>
+  </div>
+
+  <label class="cfg-check">
+    <input type="checkbox" name="create_db" value="1" {{ 'checked' if values.create_db }}>
+    Create the database if it doesn't exist
+  </label>
+  <p class="cfg-hint" style="margin-top:4px;">Creates an empty database on that server (the user needs permission to create databases). GridArena creates its tables on first use.</p>
+
+  {% if needs_key %}
+  <div class="field"><label for="admin_key">Access key</label>
+    <input id="admin_key" name="admin_key" type="password" autocomplete="off" placeholder="LVGPLAY_API_KEY"></div>
+  {% endif %}
+
+  {% if in_docker %}
+  <p class="cfg-hint">GridArena is running in a container: <code>localhost</code> is the container itself. Use <code>host.docker.internal</code> for a database on your machine, or the service name of a database container on the same Docker network.</p>
+  {% endif %}
+  <p class="cfg-hint">The connection is saved as <code>GRID_DB_DSN</code> in <code>{{ env_file }}</code>. You can change it later in <a href="/settings">Settings</a>.</p>
+
+  <div class="cfg-actions">
+    <button type="submit" class="btn btn-primary">Connect and continue</button>
+  </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function setupMode(mode) {
+    document.getElementById('modeFields').hidden = mode === 'dsn';
+    document.getElementById('modeDsn').hidden = mode !== 'dsn';
+  }
+</script>
+{% endblock %}

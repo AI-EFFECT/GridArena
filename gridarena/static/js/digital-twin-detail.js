@@ -5,7 +5,7 @@ var BASE = '/digital-twins/' + DT_ID;
 function setMsg(text, ok) {
   var el = document.getElementById('lifecycleMsg');
   el.textContent = text;
-  el.style.color = ok ? '#059669' : '#dc2626';
+  el.style.color = ok ? 'var(--color-success)' : 'var(--color-danger)';
 }
 
 function startTwin() {
@@ -95,7 +95,7 @@ var _latestMeasurements = {};
 function renderLiveGrid() {
   var container = document.getElementById('liveGridGraph');
   if (!GRAPH_DATA || !GRAPH_DATA.nodes || GRAPH_DATA.nodes.length === 0) {
-    container.innerHTML = '<p style="padding:40px; color:#6b7280; text-align:center;">No grid nodes available.</p>';
+    container.innerHTML = '<p style="padding:40px; color:var(--color-text-muted); text-align:center;">No grid nodes available.</p>';
     return;
   }
 
@@ -146,11 +146,11 @@ function renderLiveGrid() {
 
   function voltageColor(nv) {
     var v = nv.simulated_voltage != null ? nv.simulated_voltage : (nv.true_voltage != null ? nv.true_voltage : null);
-    if (v == null) return '#2563eb';
+    if (v == null) return GA.palette.cyan;
     var deviation = Math.abs(v - VOLTAGE_REF) / VOLTAGE_REF;
-    if (deviation > 0.10) return '#ef4444';
-    if (deviation > 0.05) return '#f59e0b';
-    return '#059669';
+    if (deviation > 0.10) return GA.palette.red;
+    if (deviation > 0.05) return GA.palette.orange;
+    return GA.palette.green;
   }
 
   function nodeLabel(n) {
@@ -180,7 +180,7 @@ function renderLiveGrid() {
   var traces = [
     {
       x: edgeX, y: edgeY, mode: 'lines',
-      line: { width: 2, color: '#94a3b8' },
+      line: { width: 2, color: GA.palette.slate },
       hoverinfo: 'none', showlegend: false
     },
     {
@@ -189,7 +189,7 @@ function renderLiveGrid() {
       text: ptNodes.map(function(n) { return n.id + ' (' + VOLTAGE_REF + 'V)'; }),
       hovertext: ptNodes.map(function(n) { return n.id + ' (PT ref: ' + VOLTAGE_REF + 'V)'; }),
       mode: 'markers+text', textposition: 'top center', textfont: { size: 10 },
-      marker: { size: 14, color: '#dc2626', symbol: 'square', line: { width: 1, color: '#1f2937' } },
+      marker: { size: 14, color: GA.palette.red, symbol: 'square', line: { width: 1, color: '#ffffff' } },
       name: 'PT (Reference)', hoverinfo: 'text'
     },
     {
@@ -198,7 +198,7 @@ function renderLiveGrid() {
       text: dataNodes.map(nodeLabel),
       hovertext: dataNodes.map(nodeHover),
       mode: 'markers+text', textposition: 'top center', textfont: { size: 9 },
-      marker: { size: 12, color: dataNodeColors, symbol: 'circle', line: { width: 1, color: '#1f2937' } },
+      marker: { size: 12, color: dataNodeColors, symbol: 'circle', line: { width: 1, color: '#ffffff' } },
       name: 'With data', hoverinfo: 'text'
     },
     {
@@ -207,18 +207,17 @@ function renderLiveGrid() {
       text: noDataNodes.map(function(n) { return n.id; }),
       hovertext: noDataNodes.map(function(n) { return n.id + ': no data'; }),
       mode: 'markers+text', textposition: 'top center', textfont: { size: 9 },
-      marker: { size: 10, color: '#94a3b8', symbol: 'circle', line: { width: 1, color: '#1f2937' } },
+      marker: { size: 10, color: GA.palette.slate, symbol: 'circle', line: { width: 1, color: '#ffffff' } },
       name: 'No data', hoverinfo: 'text'
     }
   ];
 
-  Plotly.newPlot(container, traces, {
+  Plotly.newPlot(container, traces, GA.chartLayout({
     showlegend: true, legend: { orientation: 'h', y: -0.05 },
     hovermode: 'closest',
     xaxis: { visible: false }, yaxis: { visible: false, scaleanchor: 'x' },
-    margin: { l: 10, r: 10, t: 10, b: 40 },
-    plot_bgcolor: '#ffffff', paper_bgcolor: '#ffffff'
-  }, { responsive: true });
+    margin: { l: 10, r: 10, t: 10, b: 40 }
+  }), { responsive: true });
 
   container.on('plotly_click', function(data) {
     if (data.points && data.points.length > 0) {
@@ -260,14 +259,14 @@ function showNodeInfo(nodeId, nodeValues, latestResultTimestamp) {
     var statusV = nv.simulated_voltage != null ? nv.simulated_voltage : nv.true_voltage;
     if (statusV != null) {
       var deviation = Math.abs(statusV - VOLTAGE_REF) / VOLTAGE_REF;
-      var statusText = 'Normal', statusColor = '#059669';
-      if (deviation > 0.10) { statusText = 'Violation'; statusColor = '#ef4444'; }
-      else if (deviation > 0.05) { statusText = 'Warning'; statusColor = '#f59e0b'; }
+      var statusText = 'Normal', statusColor = 'var(--color-success)';
+      if (deviation > 0.10) { statusText = 'Violation'; statusColor = 'var(--color-danger)'; }
+      else if (deviation > 0.05) { statusText = 'Warning'; statusColor = 'var(--color-warning)'; }
       items.push(['Voltage Status', '<span style="color:' + statusColor + '; font-weight:600;">' + statusText + '</span>']);
       items.push(['Deviation', (deviation * 100).toFixed(2) + '%']);
     }
   } else {
-    items.push(['Status', '<span style="color:#94a3b8;">No data</span>']);
+    items.push(['Status', '<span style="color:var(--color-text-faint);">No data</span>']);
   }
 
   grid.innerHTML = items.map(function(pair) {
@@ -301,7 +300,7 @@ function loadNodeHistory(nodeId) {
       loadingEl.style.display = 'none';
       var pts = data.points || [];
       if (pts.length === 0) {
-        powerDiv.innerHTML = '<p style="font-size:11px; color:#6b7280; text-align:center; padding:10px;">No history data yet.</p>';
+        powerDiv.innerHTML = '<p style="font-size:11px; color:var(--color-text-muted); text-align:center; padding:10px;">No history data yet.</p>';
         return;
       }
 
@@ -313,7 +312,6 @@ function loadNodeHistory(nodeId) {
         showlegend: true,
         legend: { orientation: 'h', y: 1.15, font: { size: 9 } },
         height: 180,
-        plot_bgcolor: '#fafbfc',
       };
 
       // Power chart
@@ -322,20 +320,20 @@ function loadNodeHistory(nodeId) {
       if (pActive.some(function(v) { return v != null; })) {
         powerTraces.push({
           x: timestamps, y: pActive, type: 'scatter', mode: 'lines+markers',
-          name: 'P (W)', line: { color: '#2563eb', width: 1.5 }, marker: { size: 3 },
+          name: 'P (W)', line: { color: GA.palette.cyan, width: 1.5 }, marker: { size: 3 },
         });
       }
       var pReactive = pts.map(function(p) { return p.power_reactive; });
       if (pReactive.some(function(v) { return v != null && v !== 0; })) {
         powerTraces.push({
           x: timestamps, y: pReactive, type: 'scatter', mode: 'lines+markers',
-          name: 'Q (VAr)', line: { color: '#f59e0b', width: 1.5 }, marker: { size: 3 },
+          name: 'Q (VAr)', line: { color: GA.palette.amber, width: 1.5 }, marker: { size: 3 },
         });
       }
       if (powerTraces.length > 0) {
         var pLayout = JSON.parse(JSON.stringify(compactLayout));
         pLayout.yaxis = { title: 'Power' };
-        Plotly.newPlot(powerDiv, powerTraces, pLayout, { responsive: true, displayModeBar: false });
+        Plotly.newPlot(powerDiv, powerTraces, GA.chartLayout(pLayout), { responsive: true, displayModeBar: false });
       }
 
       // Voltage chart
@@ -344,14 +342,14 @@ function loadNodeHistory(nodeId) {
       if (simV.some(function(v) { return v != null; })) {
         voltageTraces.push({
           x: timestamps, y: simV, type: 'scatter', mode: 'lines+markers',
-          name: 'PF Voltage', line: { color: '#7c3aed', width: 1.5 }, marker: { size: 3 },
+          name: 'PF Voltage', line: { color: GA.palette.purple, width: 1.5 }, marker: { size: 3 },
         });
       }
       var trueV = pts.map(function(p) { return p.true_voltage; });
       if (trueV.some(function(v) { return v != null; })) {
         voltageTraces.push({
           x: timestamps, y: trueV, type: 'scatter', mode: 'lines+markers',
-          name: 'True Voltage', line: { color: '#059669', width: 1.5 }, marker: { size: 3 },
+          name: 'True Voltage', line: { color: GA.palette.green, width: 1.5 }, marker: { size: 3 },
         });
       }
       if (voltageTraces.length > 0) {
@@ -360,16 +358,16 @@ function loadNodeHistory(nodeId) {
           x: [timestamps[0], timestamps[timestamps.length - 1]],
           y: [VOLTAGE_REF, VOLTAGE_REF],
           type: 'scatter', mode: 'lines', name: 'V ref',
-          line: { color: '#dc2626', width: 1, dash: 'dash' },
+          line: { color: GA.palette.red, width: 1, dash: 'dash' },
         });
         var vLayout = JSON.parse(JSON.stringify(compactLayout));
         vLayout.yaxis = { title: 'Voltage (V)' };
-        Plotly.newPlot(voltageDiv, voltageTraces, vLayout, { responsive: true, displayModeBar: false });
+        Plotly.newPlot(voltageDiv, voltageTraces, GA.chartLayout(vLayout), { responsive: true, displayModeBar: false });
       }
     })
     .catch(function(e) {
       loadingEl.style.display = 'none';
-      powerDiv.innerHTML = '<p style="font-size:11px; color:#dc2626; padding:10px;">Failed to load history.</p>';
+      powerDiv.innerHTML = '<p style="font-size:11px; color:var(--color-danger); padding:10px;">Failed to load history.</p>';
     });
 }
 
@@ -394,7 +392,7 @@ function refreshMeasurements() {
 
   loading.style.display = '';
   loading.textContent = 'Loading latest measurements...';
-  loading.style.color = '#6b7280';
+  loading.style.color = 'var(--color-text-muted)';
   table.style.display = 'none';
   empty.style.display = 'none';
 
@@ -471,16 +469,16 @@ refreshMeasurements();
   var simV = nodes.map(function(n) { return details[n].simulated_voltage; });
 
   Plotly.newPlot('voltageChart', [
-    { x: nodes, y: trueV, type: 'bar', name: 'True Voltage', marker: { color: '#3b82f6' } },
-    { x: nodes, y: simV, type: 'bar', name: 'Simulated Voltage', marker: { color: '#f59e0b' } },
-  ], {
+    { x: nodes, y: trueV, type: 'bar', name: 'True Voltage', marker: { color: GA.palette.green } },
+    { x: nodes, y: simV, type: 'bar', name: 'Simulated Voltage', marker: { color: GA.palette.purple } },
+  ], GA.chartLayout({
     barmode: 'group',
     margin: { t: 30, b: 50, l: 50, r: 20 },
     xaxis: { title: 'Node' },
     yaxis: { title: 'Voltage (V)' },
     legend: { orientation: 'h', y: 1.12 },
     font: { size: 11 },
-  }, { responsive: true });
+  }), { responsive: true });
 
   if (converged.length > 1) {
     var timestamps = converged.map(function(r) { return r.timestamp; }).reverse();
@@ -494,13 +492,13 @@ refreshMeasurements();
 
     Plotly.newPlot('maeChart', [{
       x: timestamps, y: maes, type: 'scatter', mode: 'lines+markers',
-      name: 'Voltage MAE', line: { color: '#ef4444', width: 2 },
-    }], {
+      name: 'Voltage MAE', line: { color: GA.palette.red, width: 2 },
+    }], GA.chartLayout({
       margin: { t: 30, b: 50, l: 50, r: 20 },
       xaxis: { title: 'Timestamp' },
       yaxis: { title: 'MAE (V)' },
       font: { size: 11 },
-    }, { responsive: true });
+    }), { responsive: true });
   }
 })();
 

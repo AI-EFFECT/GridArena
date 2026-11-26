@@ -82,8 +82,8 @@ Streamed measurements reuse the same fields as GridArena historical measurements
 | `node_id` | string | Node identifier (must exist in the grid) |
 | `datetime` | ISO 8601 string | Measurement timestamp |
 | `phase` | `R`, `S`, `T`, or null | Electrical phase |
-| `power_active` | float | Active power (kW) |
-| `power_reactive` | float | Reactive power (kVAr) |
+| `power_active` | float | Active power (W) |
+| `power_reactive` | float | Reactive power (VAr) |
 | `voltage_magnitude` | float | Voltage magnitude (V) |
 | `voltage_angle` | float | Voltage angle (degrees), defaults to 0 |
 
@@ -246,8 +246,8 @@ If no per-node assignments are configured, the runner falls back to a single API
   "measurements": "data.readings",
   "node_id": "sensor_id",
   "phase": "phase",
-  "active_power": "active_power_kw",
-  "reactive_power": "reactive_power_kvar",
+  "active_power": "active_power_w",
+  "reactive_power": "reactive_power_var",
   "voltage_magnitude": "voltage_v"
 }
 ```
@@ -302,7 +302,7 @@ After each update, the digital twin:
 | `voltage_mae` | Mean Absolute Error across all nodes with true voltage (V) |
 | `voltage_rmse` | Root Mean Square Error (V) |
 | `max_voltage_error` | Worst-case voltage deviation (V) |
-| `active_power_error` | Mean active power error if computable (kW) |
+| `active_power_error` | Mean active power error if computable (W) |
 | `measurements_count` | Number of measurements in the batch |
 | `missing_measurements` | Nodes in the grid with no streamed data |
 | `invalid_measurements` | Measurements that could not be mapped to grid nodes |
@@ -587,8 +587,8 @@ If the external API returns all nodes in a single response, you can use the glob
     "measurements": "data.readings",
     "node_id": "sensor_id",
     "phase": "phase",
-    "active_power": "active_power_kw",
-    "reactive_power": "reactive_power_kvar",
+    "active_power": "active_power_w",
+    "reactive_power": "reactive_power_var",
     "voltage_magnitude": "voltage_v"
   },
   "powerflow_config": {

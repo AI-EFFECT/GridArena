@@ -7,6 +7,9 @@ from gymnasium import spaces
 from gridarena.powerflow.powerflow_algorithm import full_pf
 from gridarena.rl.schemas import GridConfig
 
+# The environment works in kW; full_pf expects power in W (VA).
+KW_TO_W = 1000.0
+
 
 class GridStabilityEnv(gym.Env):
     """Gymnasium environment for voltage control on a radial LV grid.
@@ -45,7 +48,7 @@ class GridStabilityEnv(gym.Env):
 
     def _run_power_flow(self):
         self.v_state = full_pf(
-            power_measurements=self.p_kw_state,
+            power_measurements=self.p_kw_state * KW_TO_W,
             grid=self.grid,
             admitances=self.admitances,
             volt_pt=self.volt_ref + 0j,
@@ -53,7 +56,7 @@ class GridStabilityEnv(gym.Env):
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
-        self.p_kw_state = np.random.uniform(
+        self.p_kw_state = self.np_random.uniform(
             self.p_min_kw, self.p_max_kw, size=(self.n_nodes,),
         ).astype(np.float32)
         self.p_kw_state[0] = 0.0
@@ -83,5 +86,10 @@ class GridStabilityEnv(gym.Env):
         violations = np.where(dist_from_nominal > self.violation_threshold, dist_from_nominal**2, 0)
         reward = -float(np.sum(violations) * self.reward_scale)
 
-        info = {"applied_action": constrained_action}
+        # Counted here, before the vec env auto-resets, so training metrics
+        # describe the state the agent produced rather than the next episode.
+        info = {
+            "applied_action": constrained_action,
+            "num_violations": int(np.sum(dist_from_nominal > self.violation_threshold)),
+        }
         return self._get_obs(), reward, True, False, info

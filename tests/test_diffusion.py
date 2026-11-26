@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from concurrent.futures import Future
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -16,6 +17,16 @@ from gridarena.diffusion.schemas import (
 
 client = TestClient(app)
 DIFF_PREFIX = "/diffusion"
+
+
+def _done(value=None, exc=None):
+    """A finished Future, standing in for the registry's inference worker."""
+    f = Future()
+    if exc is not None:
+        f.set_exception(exc)
+    else:
+        f.set_result(value)
+    return f
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -200,8 +211,8 @@ async def test_generate_snapshot_success(mock_registry):
     mock_registry.get_run.return_value = run
     mock_registry.get_run_dir.return_value = Path("/fake/dir")
 
-    with patch("gridarena.diffusion.model_core.generate_snapshot", return_value={"snapshot": [[1.0, 2.0]]}):
-        result = await diff_router.generate_snapshot("d1")
+    mock_registry.run_inference.return_value = _done({"snapshot": [[1.0, 2.0]]})
+    result = await diff_router.generate_snapshot("d1")
     assert "snapshot" in result
 
 
@@ -216,10 +227,10 @@ async def test_generate_snapshot_failure(mock_registry):
     mock_registry.get_run.return_value = run
     mock_registry.get_run_dir.return_value = Path("/fake/dir")
 
-    with patch("gridarena.diffusion.model_core.generate_snapshot", side_effect=Exception("CUDA error")):
-        with pytest.raises(HTTPException) as exc:
-            await diff_router.generate_snapshot("d1")
-        assert exc.value.status_code == 500
+    mock_registry.run_inference.return_value = _done(exc=Exception("CUDA error"))
+    with pytest.raises(HTTPException) as exc:
+        await diff_router.generate_snapshot("d1")
+    assert exc.value.status_code == 500
 
 
 # ═══════════════════════════════════════════════════════════════

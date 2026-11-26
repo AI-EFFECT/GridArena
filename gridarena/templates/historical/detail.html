@@ -10,7 +10,7 @@
   <div class="dash-header">
     <div>
       <div class="section-title">Historical Series</div>
-      <p class="muted" style="margin:0;"><a href="/historical/ui/{{ database_id }}">{{ database_id }}</a> &rsaquo; <strong>{{ series_id }}</strong> <span class="badge {{ 'badge--mv' if grid_level == 'MV' else ('badge--feeder' if grid_level == 'Feeder' else 'badge--lv') }}">{{ grid_level }}</span></p>
+      <p class="muted" style="margin:0;"><a href="/historical/ui/{{ database_id }}">{{ database_id }}</a> &rsaquo; <strong>{{ series_id }}</strong> <span class="badge {{ 'badge--mv' if grid_level == 'MV' else ('badge--feeder' if grid_level == 'Feeder' else 'badge--lv') }}">{{ grid_level }}</span> <span class="badge badge--{{ data_type }}">{% if data_type == 'pv' %}&#9728; {% endif %}{{ data_type_label }}</span></p>
       {% if name %}<p class="muted" style="margin:2px 0 0;">{{ name }}{% if description %} &mdash; {{ description }}{% endif %}</p>{% endif %}
       {% if not empty %}
       <div class="dash-header__meta">
@@ -64,7 +64,7 @@
   <div class="chart-grid">
     {% if has_power %}
     <div class="chart-card">
-      <h4>Power</h4>
+      <h4>{% if data_type == 'load' %}Power{% else %}{{ data_type_description[0] | upper }}{{ data_type_description[1:] }}{% endif %}</h4>
       <div id="chartPower" style="height:340px;"></div>
     </div>
     {% endif %}
@@ -94,8 +94,8 @@
         <tr>
           <th>Datetime</th>
           <th>Phase</th>
-          <th>Active Power (kW)</th>
-          <th>Reactive Power (kVAr)</th>
+          <th>Active Power (W)</th>
+          <th>Reactive Power (VAr)</th>
           <th>Voltage (V)</th>
           <th>Voltage Angle (deg)</th>
         </tr>
@@ -119,6 +119,8 @@
   window.SERIES_ID = '{{ series_id }}';
   window.HAS_POWER = {{ 'true' if has_power else 'false' }};
   window.HAS_VOLTAGE = {{ 'true' if has_voltage else 'false' }};
+  window.DATA_TYPE = '{{ data_type }}';
+  window.DATA_TYPE_LABEL = '{{ data_type_label }}';
 </script>
 <script src="/static/js/historical-dashboard.js"></script>
 {% endif %}

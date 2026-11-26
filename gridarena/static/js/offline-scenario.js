@@ -3,7 +3,7 @@
 function setMsg(text, ok) {
   var el = document.getElementById('simMsg');
   el.textContent = text;
-  el.style.color = ok ? '#059669' : '#dc2626';
+  el.style.color = ok ? 'var(--color-success)' : 'var(--color-danger)';
 }
 
 // ══════════════════════════════════════════
@@ -68,7 +68,7 @@ function _getEffectiveConnections() {
 function renderConnGraph() {
   var container = document.getElementById('connGraph');
   if (typeof Plotly === 'undefined' || !GRAPH_DATA || !GRAPH_DATA.nodes || GRAPH_DATA.nodes.length === 0) {
-    container.innerHTML = '<p style="padding:30px; color:#6b7280; text-align:center;">No grid data.</p>';
+    container.innerHTML = '<p style="padding:30px; color:var(--color-text-muted); text-align:center;">No grid data.</p>';
     return;
   }
 
@@ -98,12 +98,12 @@ function renderConnGraph() {
     }
   });
 
-  traces.push({ x: origX, y: origY, mode: 'lines', line: { width: 2.5, color: '#94a3b8' }, hoverinfo: 'none', showlegend: false });
+  traces.push({ x: origX, y: origY, mode: 'lines', line: { width: 2.5, color: GA.palette.slate }, hoverinfo: 'none', showlegend: false });
   if (addX.length > 0) {
-    traces.push({ x: addX, y: addY, mode: 'lines', line: { width: 3, color: '#059669' }, hoverinfo: 'none', name: 'Added', showlegend: true });
+    traces.push({ x: addX, y: addY, mode: 'lines', line: { width: 3, color: GA.palette.green }, hoverinfo: 'none', name: 'Added', showlegend: true });
   }
   if (remX.length > 0) {
-    traces.push({ x: remX, y: remY, mode: 'lines', line: { width: 2, color: '#ef4444', dash: 'dash' }, hoverinfo: 'none', name: 'Removed', showlegend: true });
+    traces.push({ x: remX, y: remY, mode: 'lines', line: { width: 2, color: GA.palette.red, dash: 'dash' }, hoverinfo: 'none', name: 'Removed', showlegend: true });
   }
 
   // Edge midpoints for click-to-remove
@@ -119,7 +119,7 @@ function renderConnGraph() {
 
   traces.push({
     x: edgeMidX, y: edgeMidY, mode: 'markers',
-    marker: { size: 6, color: 'rgba(148,163,184,0.4)', symbol: 'x' },
+    marker: { size: 6, color: 'rgba(106,144,168,0.5)', symbol: 'x' },
     hovertext: edgeIds.map(function(id) { return 'Click to remove: ' + id; }),
     hoverinfo: 'text', showlegend: false,
     customdata: edgeIds,
@@ -129,15 +129,15 @@ function renderConnGraph() {
   var normalNodes = nodes.filter(function(n) { return n.type !== 'pt'; });
 
   function nodeColor(n) {
-    if (n.id === _selectedNode1) return '#f59e0b';
-    return n.type === 'pt' ? '#dc2626' : '#2563eb';
+    if (n.id === _selectedNode1) return GA.palette.amber;
+    return n.type === 'pt' ? GA.palette.red : GA.palette.cyan;
   }
 
   traces.push({
     x: ptNodes.map(function(n) { return n.x; }), y: ptNodes.map(function(n) { return n.y; }),
     text: ptNodes.map(function(n) { return n.id; }),
     mode: 'markers+text', textposition: 'top center', textfont: { size: 10 },
-    marker: { size: 14, color: ptNodes.map(nodeColor), symbol: 'square', line: { width: 1, color: '#1f2937' } },
+    marker: { size: 14, color: ptNodes.map(nodeColor), symbol: 'square', line: { width: 1, color: '#ffffff' } },
     name: 'PT', hoverinfo: 'text',
     customdata: ptNodes.map(function(n) { return n.id; }),
   });
@@ -146,18 +146,17 @@ function renderConnGraph() {
     x: normalNodes.map(function(n) { return n.x; }), y: normalNodes.map(function(n) { return n.y; }),
     text: normalNodes.map(function(n) { return n.id; }),
     mode: 'markers+text', textposition: 'top center', textfont: { size: 9 },
-    marker: { size: 12, color: normalNodes.map(nodeColor), symbol: 'circle', line: { width: 1, color: '#1f2937' } },
+    marker: { size: 12, color: normalNodes.map(nodeColor), symbol: 'circle', line: { width: 1, color: '#ffffff' } },
     name: 'Node', hoverinfo: 'text',
     customdata: normalNodes.map(function(n) { return n.id; }),
   });
 
-  Plotly.newPlot(container, traces, {
+  Plotly.newPlot(container, traces, GA.chartLayout({
     showlegend: true, legend: { orientation: 'h', y: -0.05, font: { size: 9 } },
     hovermode: 'closest',
     xaxis: { visible: false }, yaxis: { visible: false, scaleanchor: 'x' },
-    margin: { l: 10, r: 10, t: 10, b: 40 },
-    plot_bgcolor: '#fff', paper_bgcolor: '#fff'
-  }, { responsive: true, displayModeBar: false });
+    margin: { l: 10, r: 10, t: 10, b: 40 }
+  }), { responsive: true, displayModeBar: false });
 
   container.on('plotly_click', function(data) {
     if (!data.points || data.points.length === 0) return;
@@ -316,28 +315,27 @@ function _savePowerLimits() {
   var normalNodes = nodes.filter(function(n) { return n.type !== 'pt'; });
 
   Plotly.newPlot('scenarioGraph', [
-    { x: edgeX, y: edgeY, mode: 'lines', line: { width: 2, color: '#94a3b8' }, hoverinfo: 'none', showlegend: false },
+    { x: edgeX, y: edgeY, mode: 'lines', line: { width: 2, color: GA.palette.slate }, hoverinfo: 'none', showlegend: false },
     {
       x: ptNodes.map(function(n) { return n.x; }), y: ptNodes.map(function(n) { return n.y; }),
       text: ptNodes.map(function(n) { return n.id; }),
       mode: 'markers+text', textposition: 'top center', textfont: { size: 10 },
-      marker: { size: 14, color: '#dc2626', symbol: 'square', line: { width: 1, color: '#1f2937' } },
+      marker: { size: 14, color: GA.palette.red, symbol: 'square', line: { width: 1, color: '#ffffff' } },
       name: 'PT', hoverinfo: 'text'
     },
     {
       x: normalNodes.map(function(n) { return n.x; }), y: normalNodes.map(function(n) { return n.y; }),
       text: normalNodes.map(function(n) { return n.id; }),
       mode: 'markers+text', textposition: 'top center', textfont: { size: 9 },
-      marker: { size: 10, color: '#2563eb', symbol: 'circle', line: { width: 1, color: '#1f2937' } },
+      marker: { size: 10, color: GA.palette.cyan, symbol: 'circle', line: { width: 1, color: '#ffffff' } },
       name: 'Node', hoverinfo: 'text'
     }
-  ], {
+  ], GA.chartLayout({
     showlegend: true, legend: { orientation: 'h', y: -0.05 },
     hovermode: 'closest',
     xaxis: { visible: false }, yaxis: { visible: false, scaleanchor: 'x' },
-    margin: { l: 10, r: 10, t: 10, b: 40 },
-    plot_bgcolor: '#ffffff', paper_bgcolor: '#ffffff'
-  }, { responsive: true });
+    margin: { l: 10, r: 10, t: 10, b: 40 }
+  }), { responsive: true });
 })();
 
 
@@ -350,16 +348,16 @@ function loadTimeSeriesCharts() {
   var url = BASE + '/voltage-timeseries' + (nodeId ? '?node_id=' + encodeURIComponent(nodeId) : '');
   var vDiv = document.getElementById('voltageTimeChart');
   var pDiv = document.getElementById('powerTimeChart');
-  var colors = ['#2563eb','#059669','#f59e0b','#ef4444','#7c3aed','#0ea5e9','#d946ef','#84cc16'];
+  var colors = GA.series;
 
-  vDiv.innerHTML = '<p style="padding:20px; color:#6b7280; text-align:center;">Loading...</p>';
-  pDiv.innerHTML = '<p style="padding:20px; color:#6b7280; text-align:center;">Loading...</p>';
+  vDiv.innerHTML = '<p style="padding:20px; color:var(--color-text-muted); text-align:center;">Loading...</p>';
+  pDiv.innerHTML = '<p style="padding:20px; color:var(--color-text-muted); text-align:center;">Loading...</p>';
 
   fetch(url)
     .then(function(r) { return r.json(); })
     .then(function(data) {
       if (!data || data.length === 0) {
-        vDiv.innerHTML = '<p style="padding:20px; color:#6b7280; text-align:center;">No data. Run the simulation first.</p>';
+        vDiv.innerHTML = '<p style="padding:20px; color:var(--color-text-muted); text-align:center;">No data. Run the simulation first.</p>';
         pDiv.innerHTML = '';
         return;
       }
@@ -368,11 +366,11 @@ function loadTimeSeriesCharts() {
 
       if (nodeId) {
         var ts = data.map(function(d) { return d.timestamp; });
-        vTraces.push({ x: ts, y: data.map(function(d) { return d.simulated_voltage; }), type: 'scatter', mode: 'lines+markers', name: nodeId + ' V', line: { width: 1.5, color: '#2563eb' }, marker: { size: 4 } });
-        pTraces.push({ x: ts, y: data.map(function(d) { return d.power_active; }), type: 'scatter', mode: 'lines+markers', name: nodeId + ' P', line: { width: 1.5, color: '#2563eb' }, marker: { size: 4 } });
+        vTraces.push({ x: ts, y: data.map(function(d) { return d.simulated_voltage; }), type: 'scatter', mode: 'lines+markers', name: nodeId + ' V', line: { width: 1.5, color: GA.palette.cyan }, marker: { size: 4 } });
+        pTraces.push({ x: ts, y: data.map(function(d) { return d.power_active; }), type: 'scatter', mode: 'lines+markers', name: nodeId + ' P', line: { width: 1.5, color: GA.palette.cyan }, marker: { size: 4 } });
         var qVals = data.map(function(d) { return d.power_reactive; });
         if (qVals.some(function(v) { return v != null && v !== 0; })) {
-          pTraces.push({ x: ts, y: qVals, type: 'scatter', mode: 'lines+markers', name: nodeId + ' Q', line: { width: 1.5, color: '#f59e0b', dash: 'dash' }, marker: { size: 4 } });
+          pTraces.push({ x: ts, y: qVals, type: 'scatter', mode: 'lines+markers', name: nodeId + ' Q', line: { width: 1.5, color: GA.palette.amber, dash: 'dash' }, marker: { size: 4 } });
         }
       } else {
         var nodeMap = {};
@@ -399,9 +397,9 @@ function loadTimeSeriesCharts() {
       // Voltage reference bands
       if (vTraces.length > 0 && vTraces[0].x.length > 0) {
         var t0 = vTraces[0].x[0], t1 = vTraces[0].x[vTraces[0].x.length - 1];
-        vTraces.push({ x: [t0, t1], y: [VOLTAGE_REF, VOLTAGE_REF], type: 'scatter', mode: 'lines', name: 'V ref', line: { color: '#dc2626', width: 1, dash: 'dash' } });
-        vTraces.push({ x: [t0, t1], y: [VOLTAGE_REF * 0.9, VOLTAGE_REF * 0.9], type: 'scatter', mode: 'lines', name: '-10%', line: { color: '#f59e0b', width: 1, dash: 'dot' } });
-        vTraces.push({ x: [t0, t1], y: [VOLTAGE_REF * 1.1, VOLTAGE_REF * 1.1], type: 'scatter', mode: 'lines', name: '+10%', line: { color: '#f59e0b', width: 1, dash: 'dot' } });
+        vTraces.push({ x: [t0, t1], y: [VOLTAGE_REF, VOLTAGE_REF], type: 'scatter', mode: 'lines', name: 'V ref', line: { color: GA.palette.red, width: 1, dash: 'dash' } });
+        vTraces.push({ x: [t0, t1], y: [VOLTAGE_REF * 0.9, VOLTAGE_REF * 0.9], type: 'scatter', mode: 'lines', name: '-10%', line: { color: GA.palette.amber, width: 1, dash: 'dot' } });
+        vTraces.push({ x: [t0, t1], y: [VOLTAGE_REF * 1.1, VOLTAGE_REF * 1.1], type: 'scatter', mode: 'lines', name: '+10%', line: { color: GA.palette.amber, width: 1, dash: 'dot' } });
       }
 
       var sharedLayout = {
@@ -411,11 +409,11 @@ function loadTimeSeriesCharts() {
         hovermode: 'x unified', font: { size: 10 },
       };
 
-      Plotly.newPlot(vDiv, vTraces, Object.assign({}, sharedLayout, { yaxis: { title: 'Voltage (V)' } }), { responsive: true });
-      Plotly.newPlot(pDiv, pTraces, Object.assign({}, sharedLayout, { yaxis: { title: 'Power (W)' } }), { responsive: true });
+      Plotly.newPlot(vDiv, vTraces, GA.chartLayout(Object.assign({}, sharedLayout, { yaxis: { title: 'Voltage (V)' } })), { responsive: true });
+      Plotly.newPlot(pDiv, pTraces, GA.chartLayout(Object.assign({}, sharedLayout, { yaxis: { title: 'Power (W)' } })), { responsive: true });
     })
     .catch(function(e) {
-      vDiv.innerHTML = '<p style="padding:20px; color:#dc2626;">Failed to load: ' + e + '</p>';
+      vDiv.innerHTML = '<p style="padding:20px; color:var(--color-danger);">Failed to load: ' + e + '</p>';
       pDiv.innerHTML = '';
     });
 }

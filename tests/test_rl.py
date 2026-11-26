@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from concurrent.futures import Future
 from unittest.mock import MagicMock, patch, PropertyMock
 
 import pytest
@@ -12,6 +13,16 @@ from gridarena.rl.schemas import RunStatus, TrainRequest, EvaluateRequest
 
 client = TestClient(app)
 RL_PREFIX = "/rl"
+
+
+def _done(value=None, exc=None):
+    """A finished Future, standing in for the registry's inference worker."""
+    f = Future()
+    if exc is not None:
+        f.set_exception(exc)
+    else:
+        f.set_result(value)
+    return f
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -174,8 +185,8 @@ async def test_evaluate_run_success(mock_registry):
     mock_registry.get_run.return_value = run
     mock_registry.get_run_dir.return_value = Path("/fake/run/dir")
 
-    with patch("gridarena.rl.evaluation.evaluate_model", return_value={"voltages": [230.0]}):
-        result = await rl_router.evaluate_run("r1")
+    mock_registry.run_inference.return_value = _done({"voltages": [230.0]})
+    result = await rl_router.evaluate_run("r1")
     assert "voltages" in result
 
 
@@ -190,10 +201,10 @@ async def test_evaluate_run_failure(mock_registry):
     mock_registry.get_run.return_value = run
     mock_registry.get_run_dir.return_value = Path("/fake/run/dir")
 
-    with patch("gridarena.rl.evaluation.evaluate_model", side_effect=Exception("eval crash")):
-        with pytest.raises(HTTPException) as exc:
-            await rl_router.evaluate_run("r1")
-        assert exc.value.status_code == 500
+    mock_registry.run_inference.return_value = _done(exc=Exception("eval crash"))
+    with pytest.raises(HTTPException) as exc:
+        await rl_router.evaluate_run("r1")
+    assert exc.value.status_code == 500
 
 
 # ═══════════════════════════════════════════════════════════════

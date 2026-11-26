@@ -44,6 +44,8 @@
     if (!input.files.length) return;
     var data = new FormData();
     data.append('file', input.files[0]);
+    var dataType = document.getElementById('dataType').value;
+    if (dataType) data.append('data_type', dataType);
     btn.disabled = true;
     msg.textContent = 'Uploading...';
     try {

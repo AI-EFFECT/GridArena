@@ -1,39 +1,79 @@
 /* Design tokens -- single source of truth for color/spacing/typography/
-   elevation across every page. Every other CSS file should reference these
-   custom properties instead of hardcoding literals. */
+   elevation across every page. Mirrors the INESC TEC Services Platform
+   (tef-services) design system so GridArena reads as part of the same
+   platform. Dark is the default; [data-theme="light"] overrides it.
+
+   The short names (--bg, --surface, --accent, --text2 ...) are the
+   tef-services palette. The --color-* names are GridArena's semantic aliases
+   that page stylesheets use; they resolve against the palette so a theme
+   switch only has to redefine the palette. */
 :root {
-  /* Surfaces */
-  --color-canvas: #f4f5f9;
-  --color-surface: #ffffff;
-  --color-surface-sunken: #eef0f6;
-  --color-border: #e2e4ec;
+  color-scheme: dark;
 
-  /* Text */
-  --color-text: #1a1d29;
-  --color-text-muted: #6b7089;
+  /* ── tef-services palette ── */
+  --bg:             #080f1c;
+  --bg2:            #0d1829;
+  --bg3:            #111e33;
+  --surface:        #101d30;
+  --surface-hover:  #16263d;
+  --border:         rgba(100,200,235,0.15);
+  --border-hover:   rgba(100,200,235,0.35);
+  --accent:         #64C8EB;
+  --accent2:        #3a9fc8;
+  --text:           #e8f0f7;
+  --text2:          #8aabb8;
+  --text3:          #4d7080;
+  --success-color:  #2db37a;
+  --warning-color:  #f0a020;
+  --danger-color:   #e05555;
+  --purple-color:   #BC8CFF;
+  --solar-color:    #FFD43B;
+  --mono:           'Space Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sans:           'DM Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --r:              12px;
+  --navbar-h:       52px;
 
-  /* Sidebar */
-  --color-sidebar-bg: #0d0f1a;
-  --color-sidebar-hover: #181b2e;
-  --color-sidebar-active: #242a47;
-  --color-sidebar-text: #a8adc7;
+  /* Translucent surfaces */
+  --navbar-bg:      rgba(13,24,41,0.85);
+  --input-bg:       rgba(255,255,255,0.05);
+  --code-bg:        rgba(0,0,0,0.25);
+  --row-hover:      rgba(255,255,255,0.02);
 
-  /* Accent -- primary actions, links, active states */
-  --color-accent: #4f46e5;
-  --color-accent-hover: #4338ca;
-  --color-accent-soft: #eef0fd;
+  /* Chart chrome (tef-services CHART_THEMES) */
+  --chart-plot-bg:  #0a1420;
+  --chart-grid:     rgba(100,200,235,0.12);
+  --chart-zero:     rgba(232,240,247,0.4);
 
-  /* Secondary accent -- grid/energy/data-viz elements, wordmark, chart series */
-  --color-energy: #0d9488;
-  --color-energy-soft: #ecfdf9;
+  /* ── GridArena semantic aliases ── */
+  --color-canvas:         var(--bg);
+  --color-surface:        var(--surface);
+  --color-surface-hover:  var(--surface-hover);
+  --color-surface-sunken: var(--bg2);
+  --color-border:         var(--border);
+  --color-border-hover:   var(--border-hover);
 
-  /* Semantic */
-  --color-success: #059669;
-  --color-success-soft: #ecfdf5;
-  --color-danger: #dc2626;
-  --color-danger-soft: #fef2f2;
-  --color-warning: #d97706;
-  --color-warning-soft: #fffbeb;
+  --color-text:       var(--text);
+  --color-text-muted: var(--text2);
+  --color-text-faint: var(--text3);
+
+  --color-accent:       var(--accent);
+  --color-accent-hover: var(--accent2);
+  --color-accent-soft:  color-mix(in srgb, var(--accent) 10%, transparent);
+  --color-on-accent:    var(--bg);
+
+  /* Secondary categorical accent (LV badges, custom agents) */
+  --color-energy:      var(--purple-color);
+  --color-energy-soft: color-mix(in srgb, var(--purple-color) 12%, transparent);
+
+  /* Solar PV production data (historical databases of type "pv") */
+  --color-solar:       var(--solar-color);
+
+  --color-success:      var(--success-color);
+  --color-success-soft: color-mix(in srgb, var(--success-color) 10%, transparent);
+  --color-danger:       var(--danger-color);
+  --color-danger-soft:  color-mix(in srgb, var(--danger-color) 10%, transparent);
+  --color-warning:      var(--warning-color);
+  --color-warning-soft: color-mix(in srgb, var(--warning-color) 10%, transparent);
 
   /* Spacing scale */
   --space-1: 4px;
@@ -43,20 +83,58 @@
   --space-5: 24px;
   --space-6: 32px;
 
-  /* Radius / shadow */
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 16px;
-  --shadow-sm: 0 1px 2px rgba(15, 23, 42, .06);
-  --shadow-md: 0 4px 12px rgba(15, 23, 42, .08);
+  /* Radius / elevation -- tef cards are flat at rest, lifted on hover */
+  --radius-sm: 7px;
+  --radius-md: var(--r);
+  --radius-lg: var(--r);
+  --shadow-sm: none;
+  --shadow-md: 0 4px 24px rgba(0,0,0,0.25);
+  --shadow-pop: 0 16px 48px rgba(0,0,0,0.45);
 
   /* Typography */
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-               "Helvetica Neue", Arial, sans-serif;
+  --font-sans: var(--sans);
+  --font-mono: var(--mono);
   --text-xs: 12px;
   --text-sm: 13px;
   --text-base: 14px;
   --text-lg: 16px;
   --text-xl: 20px;
   --text-2xl: 28px;
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+
+  --bg:             #f0f5fa;
+  --bg2:            #e4edf6;
+  --bg3:            #d6e5f0;
+  --surface:        #e0ecf5;
+  --surface-hover:  #d7e1eb;
+  --border:         rgba(0,100,160,0.15);
+  --border-hover:   rgba(0,100,160,0.40);
+  --accent:         #0078b4;
+  --accent2:        #005a8c;
+  --text:           #0a1e2e;
+  --text2:          #2e5570;
+  --text3:          #6a90a8;
+  --success-color:  #1a9660;
+  --warning-color:  #c47d00;
+  --danger-color:   #c93030;
+  --purple-color:   #6d4bab;
+  --solar-color:    #8a6d00;
+
+  --navbar-bg:      rgba(220,235,248,0.85);
+  --input-bg:       rgba(255,255,255,0.65);
+  --code-bg:        rgba(0,0,0,0.04);
+  --row-hover:      rgba(0,0,0,0.02);
+
+  --chart-plot-bg:  #d3e2ef;
+  --chart-grid:     rgba(0,120,180,0.14);
+  --chart-zero:     rgba(10,30,46,0.35);
+
+  /* Recessed areas read darker than the card in light mode */
+  --color-surface-sunken: var(--bg3);
+
+  --shadow-md: 0 4px 20px rgba(0,100,160,0.10);
+  --shadow-pop: 0 16px 40px rgba(0,50,100,0.15);
 }

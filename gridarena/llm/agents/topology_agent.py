@@ -1,10 +1,9 @@
-import gridarena.schemas as sc
 from gridarena.llm.base_agent import BaseAgent
 from gridarena.routers.topology_discovery_benchmark import (
-    get_score,
-    get_topology_discovery_data,
+    get_submission_template_source,
     get_topology_identification_data,
-    submit_topology_guesses,
+    get_topology_submission,
+    submit_topology_script,
 )
 
 
@@ -14,30 +13,31 @@ class TopologyAgent(BaseAgent):
         self._record("get_training_topology_data", difficulty=difficulty)
         return await self._call(get_topology_identification_data, difficulty=difficulty)
 
-    async def _test(self, difficulty: str = "clean"):
-        self._record("get_topology_discovery_data", difficulty=difficulty)
-        return await self._call(get_topology_discovery_data, difficulty=difficulty)
+    async def _template(self):
+        self._record("get_topology_submission_template")
+        return await self._call(get_submission_template_source)
 
-    async def _submit(self, guess_id: str, grid_id: str, guesses: list):
-        self.last_queried_grid = grid_id
-        self._record("submit_topology_guesses", grid_id=grid_id)
-        submission = sc.TopologyGuessSubmission(guess_id=guess_id, grid_id=grid_id, guesses=guesses)
-        return await self._call(submit_topology_guesses, topology_guess=submission)
+    async def _submit(self, submission_name: str, code: str, difficulty: str = "clean"):
+        self._record("submit_topology_script", submission_name=submission_name, difficulty=difficulty)
+        return await self._call(
+            submit_topology_script, source=code.encode("utf-8"), filename="submission.py",
+            submission_name=submission_name, difficulty=difficulty,
+        )
 
-    async def _score(self, guess_id: str, grid_id: str):
-        self.last_queried_grid = grid_id
-        self._record("get_topology_score", grid_id=grid_id)
-        return await self._call(get_score, guess_id=guess_id, grid_id=grid_id)
+    async def _status(self, submission_id: str):
+        self._record("get_topology_submission", submission_id=submission_id)
+        return await self._call(get_topology_submission, submission_id=submission_id)
 
     async def handle(self, tool_name: str, tool_args: dict):
         if tool_name == "get_training_topology_data":
             return await self._training(difficulty=tool_args.get("difficulty", "clean"))
-        elif tool_name == "get_topology_discovery_data":
-            return await self._test(difficulty=tool_args.get("difficulty", "clean"))
-        elif tool_name == "submit_topology_guesses":
+        elif tool_name == "get_topology_submission_template":
+            return await self._template()
+        elif tool_name == "submit_topology_script":
             return await self._submit(
-                guess_id=tool_args["guess_id"], grid_id=tool_args["grid_id"], guesses=tool_args["guesses"],
+                submission_name=tool_args["submission_name"], code=tool_args["code"],
+                difficulty=tool_args.get("difficulty", "clean"),
             )
-        elif tool_name == "get_topology_score":
-            return await self._score(guess_id=tool_args["guess_id"], grid_id=tool_args["grid_id"])
+        elif tool_name == "get_topology_submission":
+            return await self._status(submission_id=tool_args["submission_id"])
         return await super().handle(tool_name, tool_args)
